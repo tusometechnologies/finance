@@ -16,6 +16,8 @@ Staff sign in with their **email (username) and password**. What each person can
 5. `supabase/005_payments_ledger.sql` — the platform becomes the book of payments: payments ledger (company and personal
    money), part-repayments, pre-approved envelopes, alternate approver (habari@) for the Director's own items,
    November 2026 tracker payments imported. Earlier months: Payments > Import from tracker (CSV).
+6. `supabase/006_import_tracker_oct_nov.sql` — all 135 tracker payments from October 2026 onwards (Oct 78, Nov 57),
+   read from the tracker file on 20 Nov 2026, all treated as approved. Totals match the tracker's monthly summaries.
 
 ## Roles
 
