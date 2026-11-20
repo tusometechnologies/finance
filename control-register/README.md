@@ -35,7 +35,11 @@ Phase 2 (not built): Recurring Services Register, Supplier Advances, Budget Enve
 - Band 2: TZS 500,000 to USD 1,000, 2 quotes, Independent Director approval.
 - Band 3: above USD 1,000, 3 quotes, Independent Director then Director approval.
 - USD conversion uses the latest approval FX rate on or before the request's FX date (default: date raised).
-  The current rate (TZS 2,500/USD) is a placeholder.
+  Source: Bank of Tanzania mean rate (Director decision 2026-11-20). First BoT row: TZS 2,660.7126/USD,
+  trading date 20-Nov-2026. The earlier TZS 2,500 placeholder is marked Superseded.
+- Withholding tax rates: TRA "Taxes and Duties at a Glance 2025/2026" (July 2025), section 2.0. Professional and
+  other services 10% resident / 15% non-resident; rent on land and buildings 10% / 20%. TRA's withholding-tax
+  web page shows 5% and 10% for these two items, so both are flagged for tax-adviser confirmation.
 - Possible split: same supplier, requests within +/- 30 days, combined value falls in a higher band than the request alone.
 - Purchases dated before the policy effective date (2026-11-04) show "Pre-policy" for quotations.
 - Supplier is "Verified" only when TIN, EFD/VFD status, call-back verification, verifier, conflict declaration and F07 link are complete.
@@ -43,6 +47,11 @@ Phase 2 (not built): Recurring Services Register, Supplier Advances, Budget Enve
 ## ID formats
 
 `PRQ-2026-001` (retrospective: `PRQ-2026-R001`), `SUP-0001`, `CON-2026-001`, `ACC-01`.
+
+## Users (Director decision 2026-11-20)
+
+Editors: asnes@tusome.ac.tz, hamis@tusome.ac.tz (Director), joseph@tusome.ac.tz. Not yet shared: none of these
+addresses had a Google account on 2026-11-20. Auditor account: not yet named.
 
 ## Access model
 
