@@ -1,0 +1,559 @@
+<title>TUSOME Finance & Procurement</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+<style>
+/* Layout: ledger app. Fixed left rail on desktop, top tab strip on phones; documents open in a side sheet. */
+:root{
+  --bg:#F5F6FA; --surface:#FFFFFF; --sunk:#EDEFF6; --ink:#16152B; --muted:#5C5F77; --line:#DCDFEA;
+  --brand:#6A3BE0; --brand-soft:#EFE9FF; --sky:#1C8FE0;
+  --ok:#17804F; --ok-bg:#E2F4EA; --warn:#8F5A00; --warn-bg:#FFF1D1; --bad:#B0233A; --bad-bg:#FCE4E8; --info-bg:#E6F2FD;
+  --font:Manrope,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; --mono:"JetBrains Mono",ui-monospace,Menlo,Consolas,monospace;
+  --r:10px;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0E0D1A; --surface:#17162B; --sunk:#201F3A; --ink:#ECEAF8; --muted:#A3A1BC; --line:#2F2D4E;
+  --brand:#B193FF; --brand-soft:#2A2350; --sky:#5BB8FF;
+  --ok:#5CD69D; --ok-bg:#11301F; --warn:#F1C063; --warn-bg:#33270C; --bad:#FF8C9B; --bad-bg:#3A1621; --info-bg:#10283A; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0E0D1A; --surface:#17162B; --sunk:#201F3A; --ink:#ECEAF8; --muted:#A3A1BC; --line:#2F2D4E;
+  --brand:#B193FF; --brand-soft:#2A2350; --sky:#5BB8FF;
+  --ok:#5CD69D; --ok-bg:#11301F; --warn:#F1C063; --warn-bg:#33270C; --bad:#FF8C9B; --bad-bg:#3A1621; --info-bg:#10283A; color-scheme:dark}
+*,*::before,*::after{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 var(--font)}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:30;background:var(--surface)}
+button,input,select,textarea{font:inherit;color:inherit}
+a{color:var(--brand)}
+:focus-visible{outline:2px solid var(--sky);outline-offset:2px}
+.app{display:grid;grid-template-columns:232px 1fr;min-height:100%}
+.rail{position:sticky;top:env(safe-area-inset-top,0px);height:calc(100vh - env(safe-area-inset-top,0px));background:var(--surface);border-right:1px solid var(--line);display:flex;flex-direction:column;padding:18px 12px;gap:4px;padding-left:max(12px,env(safe-area-inset-left,0px))}
+.brand{display:flex;gap:10px;align-items:center;padding:4px 8px 16px;font-weight:800;line-height:1.2}
+.brand small{display:block;font-weight:500;color:var(--muted);font-size:11.5px}
+.mark{width:30px;height:30px;border-radius:8px;background:var(--brand);color:#fff;display:grid;place-items:center;font-weight:800;font-size:15px;flex:none}
+.nav{display:flex;flex-direction:column;gap:2px}
+.nav a{display:flex;justify-content:space-between;align-items:center;padding:8px 10px;border-radius:8px;color:var(--muted);text-decoration:none;font-weight:600}
+.nav a:hover{background:var(--sunk);color:var(--ink)}
+.nav a[aria-current="page"]{background:var(--brand-soft);color:var(--brand)}
+.count{min-width:20px;padding:0 6px;border-radius:10px;background:var(--brand);color:#fff;font-size:11px;line-height:20px;text-align:center;font-weight:700}
+.count.bad{background:var(--bad)}
+.who{margin-top:auto;border-top:1px solid var(--line);padding:12px 8px 0;font-size:12.5px;color:var(--muted)}
+.who b{display:block;color:var(--ink);font-size:13.5px}
+main{min-width:0;padding-block:24px 80px;padding-left:max(28px,env(safe-area-inset-left,0px));padding-right:max(28px,env(safe-area-inset-right,0px))}
+.wrap{max-width:1180px;margin:0 auto;display:flex;flex-direction:column;gap:18px}
+h1{font-size:24px;line-height:1.2;margin:0;font-weight:800;text-wrap:balance}
+h2{font-size:15px;margin:0;font-weight:700}
+.sub{color:var(--muted);margin:2px 0 0;max-width:72ch}
+.head{display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;justify-content:space-between}
+.banner{border-radius:var(--r);padding:10px 14px;font-size:13px;background:var(--warn-bg);color:var(--warn)}
+.banner.info{background:var(--info-bg);color:var(--ink)}
+.banner b{font-weight:700}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:1px;background:var(--line);border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
+.tile{background:var(--surface);padding:14px 16px}
+.tile .v{font-size:21px;font-weight:800;font-variant-numeric:tabular-nums}
+.tile .l{color:var(--muted);font-size:12.5px}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);min-width:0}
+.panel>.ph{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--line)}
+.tabs{display:flex;gap:2px;border-bottom:1px solid var(--line);overflow-x:auto;scrollbar-width:none;padding:0 8px}
+.tabs button{border:0;background:none;padding:11px 12px;font-weight:600;color:var(--muted);border-bottom:2px solid transparent;white-space:nowrap;cursor:pointer}
+.tabs button[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--brand)}
+.tabs .n{color:var(--muted);font-weight:500;margin-left:4px;font-variant-numeric:tabular-nums}
+.tbl{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:13.5px}
+th{text-align:left;font-size:11.5px;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);font-weight:700;padding:9px 14px;border-bottom:1px solid var(--line);white-space:nowrap}
+td{padding:10px 14px;border-bottom:1px solid var(--line);vertical-align:top}
+tr:last-child td{border-bottom:0}
+tbody tr.click{cursor:pointer}
+tbody tr.click:hover{background:var(--sunk)}
+.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.mono{font-family:var(--mono);font-size:12.5px;white-space:nowrap}
+.muted{color:var(--muted)}
+.small{font-size:12.5px}
+.empty{padding:26px 16px;color:var(--muted);text-align:center}
+.pill{display:inline-block;padding:2px 9px;border-radius:999px;font-size:12px;font-weight:700;white-space:nowrap}
+.p-ok{background:var(--ok-bg);color:var(--ok)}.p-warn{background:var(--warn-bg);color:var(--warn)}.p-bad{background:var(--bad-bg);color:var(--bad)}.p-info{background:var(--info-bg);color:var(--sky)}.p-mute{background:var(--sunk);color:var(--muted)}.p-brand{background:var(--brand-soft);color:var(--brand)}
+.flags{display:flex;flex-wrap:wrap;gap:4px;margin-top:4px}
+.btn{border:1px solid var(--line);background:var(--surface);padding:8px 14px;border-radius:8px;font-weight:700;cursor:pointer;white-space:nowrap}
+.btn:hover{background:var(--sunk)}
+.btn.primary{background:var(--brand);border-color:var(--brand);color:#fff}
+.btn.primary:hover{filter:brightness(1.06);background:var(--brand)}
+.btn.ok{background:var(--ok);border-color:var(--ok);color:#fff}
+.btn.danger{color:var(--bad)}
+.btn.sm{padding:5px 10px;font-size:12.5px}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:10px 14px;border-bottom:1px solid var(--line)}
+.toolbar input,.toolbar select{padding:7px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+.list{display:flex;flex-direction:column}
+.li{display:grid;grid-template-columns:1fr auto;gap:2px 14px;padding:11px 16px;border-bottom:1px solid var(--line);cursor:pointer;background:none;border-left:0;border-right:0;border-top:0;text-align:left;width:100%}
+.li:last-child{border-bottom:0}
+.li:hover{background:var(--sunk)}
+.li .t{font-weight:700}
+/* side sheet */
+.sheet{position:fixed;top:0;right:0;bottom:0;width:min(620px,100vw);background:var(--surface);border-left:1px solid var(--line);box-shadow:-18px 0 50px rgba(10,8,30,.18);z-index:40;display:flex;flex-direction:column;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);padding-right:env(safe-area-inset-right,0px)}
+.scrim{position:fixed;inset:0;background:rgba(10,8,30,.35);z-index:35}
+.sh-head{display:flex;gap:12px;align-items:flex-start;padding:16px 20px;border-bottom:1px solid var(--line)}
+.sh-head .x{margin-left:auto;border:0;background:none;font-size:24px;line-height:1;cursor:pointer;color:var(--muted)}
+.sh-body{overflow-y:auto;padding:16px 20px 28px;display:flex;flex-direction:column;gap:18px}
+.sec h3{font-size:12px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);margin:0 0 8px;font-weight:700}
+dl{display:grid;grid-template-columns:150px 1fr;gap:6px 14px;margin:0;font-size:13.5px}
+dt{color:var(--muted)} dd{margin:0;overflow-wrap:anywhere;min-width:0}
+/* approval chain */
+.chain{display:flex;flex-direction:column;gap:0}
+.step{display:grid;grid-template-columns:22px 1fr;gap:10px;position:relative;padding-bottom:14px}
+.step:not(:last-child)::before{content:"";position:absolute;left:10px;top:22px;bottom:0;width:2px;background:var(--line)}
+.dot{width:22px;height:22px;border-radius:50%;border:2px solid var(--line);background:var(--surface);display:grid;place-items:center;font-size:12px;font-weight:800}
+.step.done .dot{background:var(--ok);border-color:var(--ok);color:#fff}
+.step.rej .dot{background:var(--bad);border-color:var(--bad);color:#fff}
+.step.now .dot{border-color:var(--brand);color:var(--brand)}
+.step .st{font-weight:700}
+.trail{display:flex;gap:4px;margin-top:6px}
+.trail span{flex:1;height:5px;border-radius:3px;background:var(--line)}
+.trail span.done{background:var(--ok)}.trail span.gap{background:var(--bad)}.trail span.now{background:var(--brand)}
+/* forms */
+dialog{border:0;padding:0;border-radius:14px;width:min(640px,94vw);max-height:90vh;background:var(--surface);color:var(--ink);box-shadow:0 20px 60px rgba(10,8,30,.35)}
+dialog::backdrop{background:rgba(10,8,30,.45)}
+.dh{display:flex;align-items:center;padding:16px 20px;border-bottom:1px solid var(--line)}
+.dh h2{font-size:17px}
+.dh .x{margin-left:auto;border:0;background:none;font-size:24px;cursor:pointer;color:var(--muted)}
+.db{padding:16px 20px;display:grid;gap:12px;overflow-y:auto;max-height:calc(90vh - 130px)}
+.df{display:flex;gap:8px;justify-content:flex-end;padding:12px 20px;border-top:1px solid var(--line)}
+.f{display:grid;gap:4px;font-size:13px;font-weight:600;min-width:0}
+.f input,.f select,.f textarea{padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);font-weight:500;width:100%;min-width:0}
+.f .hint{font-weight:500;color:var(--muted);font-size:12px}
+.fg{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.rule{background:var(--sunk);border-radius:var(--r);padding:10px 12px;font-size:13px}
+.rule b{display:block}
+.picker{position:relative}
+.menu{position:absolute;left:0;right:0;top:100%;z-index:5;background:var(--surface);border:1px solid var(--line);border-radius:8px;box-shadow:0 10px 30px rgba(10,8,30,.15);max-height:240px;overflow:auto}
+.menu button{display:block;width:100%;text-align:left;border:0;background:none;padding:8px 10px;cursor:pointer}
+.menu button:hover{background:var(--sunk)}
+.toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:10px;font-weight:600;opacity:0;transition:opacity .2s;pointer-events:none;z-index:60;max-width:90vw}
+.toast.show{opacity:1}
+.mobnav{display:none}
+@media (max-width:860px){
+  .app{grid-template-columns:1fr}
+  .rail{display:none}
+  .mobnav{display:flex;position:sticky;top:env(safe-area-inset-top,0px);z-index:20;background:var(--surface);border-bottom:1px solid var(--line);overflow-x:auto;scrollbar-width:none;padding-left:max(8px,env(safe-area-inset-left,0px));padding-right:max(8px,env(safe-area-inset-right,0px))}
+  .mobnav a{padding:12px 10px;color:var(--muted);text-decoration:none;font-weight:600;white-space:nowrap;border-bottom:2px solid transparent}
+  .mobnav a[aria-current="page"]{color:var(--ink);border-bottom-color:var(--brand)}
+  main{padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+  .grid2,.fg{grid-template-columns:1fr}
+  dl{grid-template-columns:1fr} dt{margin-top:6px}
+}
+@media (prefers-reduced-motion:reduce){.toast{transition:none}}
+</style>
+
+<div class="app">
+  <aside class="rail" aria-label="Main">
+    <div class="brand"><div class="mark" aria-hidden="true">T</div><div>TUSOME Finance<small>Procurement & approvals</small></div></div>
+    <nav class="nav" id="nav"></nav>
+    <div class="who" id="who">Connecting…</div>
+  </aside>
+  <div style="min-width:0">
+    <nav class="mobnav" id="mobnav" aria-label="Main"></nav>
+    <main><div class="wrap" id="view"></div></main>
+  </div>
+</div>
+<div id="sheetRoot"></div>
+<dialog id="dlg"></dialog>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+"use strict";
+/* ============ constants ============ */
+const DOMAIN = "tusome.ac.tz";
+const CATS = ["Operations & Essential Costs","Training","M&E, Reporting, and Legal Support","Product Development & Tech Improvements","Marketing & User Acquisition","Safeguarding, Gender, & Compliance"];
+const KINDS = ["Goods","Service","Consultant / individual contractor","Software / subscription","Event, travel or logistics"];
+const FISCAL = ["Not checked","Verified","Exception approved","None"];
+const EVIDENCE = ["Complete","Partially Supported","Missing Evidence","Amount Mismatch","Date Mismatch","Duplicate","Requires Clarification","Not Applicable"];
+const SUP_TYPES = ["Company","Individual","Government body","Platform / online service","To confirm"];
+const CON_TYPES = ["Supply of goods","Service","Consultancy","Software / subscription","Lease / rent","Other"];
+const CON_STATUS = ["Draft","Active","Completed","Expired","Terminated"];
+const ACC_TYPES = ["Bank account","Mobile-money wallet","Payment gateway","Petty cash","Card"];
+const ACC_STATUS = ["Active","Dormant","Closed","To confirm","Personal account used for company payments"];
+const ROLE_LABEL = {ID:"Independent Director", DIR:"Director"};
+const VIEWS = [["today","Today"],["requests","Purchase requests"],["suppliers","Suppliers"],["contracts","Contracts"],["exceptions","Exceptions"],["accounts","Bank & wallets"],["audit","Audit trail"],["setup","Rules & roles"]];
+
+/* ============ state ============ */
+const S = {db:null,user:null,me:{id:null,name:"",email:null,canEdit:false,isOwner:false},canWrite:false,domainOk:true,
+  settings:null,requests:{},suppliers:{},contracts:{},accounts:{},approvals:{},audit:{},names:{},
+  loaded:{settings:false,requests:false},stale:false,offline:false};
+let view="today", tab="all", q="", sheetFor=null, dirtyNames=false;
+const subs={appr:{},aud:{}};
+
+/* ============ helpers ============ */
+const $=s=>document.querySelector(s);
+function h(tag,attrs,...kids){const el=document.createElement(tag);if(attrs)for(const[k,v]of Object.entries(attrs)){if(v==null||v===false)continue;if(k.startsWith("on"))el.addEventListener(k.slice(2),v);else if(k==="class")el.className=v;else if(k==="html")el.innerHTML=v;else el.setAttribute(k,v===true?"":v)}for(const c of kids.flat(9)){if(c==null||c===false)continue;el.append(c instanceof Node?c:document.createTextNode(String(c)))}return el}
+const today=()=>new Date().toISOString().slice(0,10);
+const nowIso=()=>new Date().toISOString();
+const n0=v=>Number(v)||0;
+function money(a,c){if(a===""||a==null||isNaN(a))return "—";return (c==="USD"?"USD ":"TZS ")+Number(a).toLocaleString("en-GB",{minimumFractionDigits:c==="USD"?2:0,maximumFractionDigits:c==="USD"?2:0})}
+const tzs=a=>money(a,"TZS");
+function fmtDate(d){if(!d)return "—";const x=new Date(d.length===10?d+"T00:00:00":d);return isNaN(x)?d:x.toLocaleDateString("en-GB",{day:"numeric",month:"short",year:"numeric"})}
+function fmtTime(d){const x=new Date(d);return isNaN(x)?"":x.toLocaleString("en-GB",{day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"})}
+function pill(text,cls){return h("span",{class:"pill "+cls},text)}
+function toast(m){const t=$("#toast");t.textContent=m;t.classList.add("show");clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove("show"),2600)}
+function nameOf(id){if(!id)return "—";const n=S.names[id];if(n===undefined){dirtyNames=true;return "…"}return n||"Someone"}
+async function resolveNames(){if(!S.user||!dirtyNames)return;dirtyNames=false;const ids=new Set();
+  Object.values(S.requests).forEach(r=>{r.requester&&ids.add(r.requester);r.payment?.by&&ids.add(r.payment.by)});
+  Object.values(S.approvals).forEach(a=>ids.add(a.by));Object.values(S.audit).forEach(a=>ids.add(a.by));
+  const R=S.settings?.roles||{};Object.values(R).forEach(v=>v&&ids.add(v));
+  const list=[...ids].filter(Boolean);if(!list.length)return;
+  try{const ps=await S.user.profiles(list);let ch=false;for(const id of list){const nm=ps[id]?.name||"";if(S.names[id]!==nm){S.names[id]=nm;ch=true}}if(ch)render()}catch(e){}}
+
+/* ============ policy engine ============ */
+function cfg(){return S.settings||{fxRates:[],band1Tzs:500000,thresholdUsd:1000,splitDays:30,policyDate:"2026-11-04",contractWarnDays:30,roles:{},wht:[]}}
+function fxFor(d){const rates=(cfg().fxRates||[]).filter(r=>r.date&&n0(r.rate)>0).sort((a,b)=>a.date<b.date?-1:1);let pick=null;for(const r of rates){if(r.date<=d)pick=r}return pick||rates[rates.length-1]||null}
+function amounts(r){const d=r.fxDate||r.date||today();const fx=fxFor(d);const rate=fx?n0(fx.rate):0;const a=n0(r.amount);
+  if(r.currency==="USD")return{tzs:rate?a*rate:null,usd:a,rate,fx};return{tzs:a,usd:rate?a/rate:null,rate,fx}}
+function bandOf(tzsV,usdV){const c=cfg();if(usdV!=null&&usdV>n0(c.thresholdUsd))return 3;if(tzsV!=null&&tzsV>=n0(c.band1Tzs))return 2;return 1}
+function band(r){const a=amounts(r);return bandOf(a.tzs,a.usd)}
+function bandText(n){const c=cfg();return n===1?"Below TZS "+n0(c.band1Tzs).toLocaleString("en-GB"):n===2?"TZS "+n0(c.band1Tzs).toLocaleString("en-GB")+" to USD "+n0(c.thresholdUsd).toLocaleString("en-GB"):"Above USD "+n0(c.thresholdUsd).toLocaleString("en-GB")}
+function stepsFor(r){return band(r)===3?["ID","DIR"]:["ID"]}
+function prePolicy(r){return (r.date||"")<(cfg().policyDate||"")}
+function quotesState(r){if(prePolicy(r))return"Pre-policy";const need=band(r);return ((r.quotes||[]).length>=need||!!r.waiver)?"OK":"Short"}
+function apprKey(reqId,rev,role){return reqId+"__"+rev+"__"+role}
+function validApprover(role,uid){const c=cfg();return !!uid&&((c.roles||{})[role]===uid||((c.roleHistory||{})[role]||[]).includes(uid))}
+function decisionFor(r,role){const d=S.approvals[apprKey(r.id,r.rev||1,role)];return d&&d.by!==r.requester&&validApprover(role,d.by)?d:null}
+function chainState(r){const st=stepsFor(r);let out=[];let blocked=false;
+  for(const role of st){const d=decisionFor(r,role);let s="pending";if(d)s=d.decision==="Approved"?"done":"rej";else if(!blocked&&r.submitted)s="now";if(s!=="done")blocked=true;out.push({role,dec:d,s})}
+  return out}
+function approvedAll(r){return chainState(r).every(x=>x.s==="done")}
+function rejected(r){return chainState(r).some(x=>x.s==="rej")}
+function status(r){
+  if(!r.submitted)return{k:"draft",t:"Draft",c:"p-mute"};
+  if(rejected(r))return{k:"rejected",t:"Rejected",c:"p-bad"};
+  if(!approvedAll(r)){if(r.payment)return{k:"paid",t:"Paid without approval",c:"p-bad"};return{k:"approval",t:"Awaiting approval",c:"p-warn"}}
+  if(!r.delivery)return{k:"approved",t:"Approved · awaiting delivery",c:"p-info"};
+  if(!r.invoice)return{k:"approved",t:"Delivered · awaiting invoice",c:"p-info"};
+  if(!r.payment)return{k:"payment",t:"Awaiting payment",c:"p-brand"};
+  return{k:"paid",t:"Paid",c:"p-ok"}}
+function supplierVerified(s){return !!(s&&s.tin&&["Yes","No"].includes(s.efd)&&s.callback==="Yes"&&s.verifiedBy&&["None declared","Declared"].includes(s.coi)&&s.f07)}
+function supplierTotalInWindow(r){if(!r.supplierId||!r.date)return null;const w=n0(cfg().splitDays)*864e5;const d0=new Date(r.date);let t=0;
+  for(const x of Object.values(S.requests)){if(x.supplierId!==r.supplierId||!x.date||rejected(x))continue;if(Math.abs(new Date(x.date)-d0)<=w){const a=amounts(x).tzs;if(a!=null)t+=a}}return t}
+function splitFlag(r){const t=supplierTotalInWindow(r);if(t==null)return null;const a=amounts(r);const rate=a.rate;const bAgg=bandOf(t,rate?t/rate:null);return bAgg>band(r)?t:null}
+function checks(r){const out=[];const st=status(r);
+  if(r.submitted&&quotesState(r)==="Short")out.push(["Quotations short","Band "+band(r)+": "+(r.quotes||[]).length+" of "+band(r)+" quotes on record"]);
+  if(r.submitted&&!approvedAll(r)&&!rejected(r)&&(r.payment||r.retro))out.push(["Approval missing","Route: "+stepsFor(r).map(x=>ROLE_LABEL[x]).join(" then ")]);
+  if(r.payment&&!approvedAll(r))out.push(["Paid before approval","Payment recorded without a complete approval chain"]);
+  const sp=splitFlag(r);if(sp!=null)out.push(["Possible split purchase","Supplier total within "+cfg().splitDays+" days: "+tzs(sp)]);
+  const s=S.suppliers[r.supplierId];if(r.submitted&&!supplierVerified(s))out.push(["Supplier not F07 verified",s?s.name:"No supplier selected"]);
+  if(r.payment&&!["Verified","Exception approved"].includes(r.invoice?.fiscal))out.push(["Fiscal receipt gap","Status: "+(r.invoice?.fiscal||"No invoice recorded")]);
+  if(r.payment&&!r.payment.trackerId)out.push(["No tracker Record ID","Payment not linked to the expenditure tracker"]);
+  if(!amounts(r).rate&&r.currency==="USD")out.push(["No FX rate","Add an approval FX rate in Rules & roles"]);
+  return out}
+function contractChecks(c){const out=[];if(c.type==="Consultancy"){const ok=v=>v==="Yes"||v==="Not applicable";if(!(ok(c.tor)&&c.ip==="Yes"&&ok(c.saf)&&ok(c.data)))out.push(["Consultancy clauses missing","Check ToR, IP, SAF-01, DATA-02"])}
+  const dte=daysToEnd(c);if(c.status==="Active"&&dte!=null&&dte>=0&&dte<=n0(cfg().contractWarnDays))out.push(["Contract ending soon",dte+" days to end"]);return out}
+function daysToEnd(c){if(!c.end)return null;return Math.round((new Date(c.end+"T00:00:00")-new Date(today()+"T00:00:00"))/864e5)}
+function invoicedFor(cid){let t=0;Object.values(S.requests).forEach(r=>{if(r.contractId===cid&&r.invoice)t+=n0(r.invoice.amount)});return t}
+function allExceptions(){const out=[];
+  Object.values(S.requests).forEach(r=>checks(r).forEach(([k,d])=>out.push({k,d,ref:r.id,who:S.suppliers[r.supplierId]?.name||"—",amt:amounts(r).tzs,go:()=>openRequest(r.id)})));
+  Object.values(S.contracts).forEach(c=>contractChecks(c).forEach(([k,d])=>out.push({k,d,ref:c.id,who:S.suppliers[c.supplierId]?.name||"—",amt:c.currency==="USD"?null:n0(c.value),go:()=>editContract(c.id)})));
+  const fx=fxFor(today());if(!fx||fx.status==="Placeholder")out.push({k:"FX rate not confirmed",d:"Add the current Bank of Tanzania rate",ref:"Rules",who:"—",amt:null,go:()=>go("setup")});
+  if(!cfg().roles?.ID||!cfg().roles?.DIR)out.push({k:"Approvers not assigned",d:"Assign the Independent Director and Director",ref:"Rules",who:"—",amt:null,go:()=>go("setup")});
+  return out}
+function myPending(){const me=S.me.id;if(!me)return[];const R=cfg().roles||{};
+  return Object.values(S.requests).filter(r=>{if(!r.submitted||rejected(r))return false;const now=chainState(r).find(x=>x.s==="now");return now&&R[now.role]===me&&r.requester!==me})}
+
+/* ============ data access ============ */
+function writable(){return S.db&&S.canWrite&&S.domainOk&&S.me.id}
+async function audit(action,entity,entityId,summary,extra){if(!writable())return;try{
+  if(!S._auditIdx){await S.db.doc("audit/"+S.me.id).set({since:S._since||nowIso()});S._auditIdx=true}
+  await S.db.collection("audit/"+S.me.id+"/e").add(Object.assign({at:nowIso(),by:S.me.id,action,entity,entityId,summary},extra?{detail:extra}:{}))}catch(e){console.warn("audit",e)}}
+async function nextNumber(kind,prefix,pad){const ref=S.db.doc("counters/"+kind);
+  for(let i=0;i<8;i++){const l=await ref.acquire({holder:S.me.id+":"+Math.random().toString(36).slice(2),ttlMs:5000});
+    if(l.acquired){const snap=await ref.get();const n=n0(snap.exists?snap.data().n:0)+1;await ref.set({n});return prefix+String(n).padStart(pad,"0")}
+    await new Promise(r=>setTimeout(r,500+Math.random()*700))}
+  throw new Error("Numbering is busy. Try again in a moment.")}
+async function guard(fn,okMsg){try{await fn();if(okMsg)toast(okMsg)}catch(e){console.error(e);toast(e.code==="quota_exceeded"?"Storage is full. Ask the owner to archive old records.":e.code==="invalid_argument"?"You do not have permission to change this.":(e.message||"Could not save. Try again."))}}
+
+/* ============ navigation ============ */
+function go(v){location.hash=v}
+function readHash(){const hsh=(location.hash||"").slice(1);if(hsh.startsWith("r-")){sheetFor={type:"req",id:hsh.slice(2)};if(view==="today"&&!S._routed)view="requests"}else{sheetFor=null;if(VIEWS.some(x=>x[0]===hsh))view=hsh}S._routed=true;render()}
+window.addEventListener("hashchange",readHash);
+function openRequest(id){location.hash="r-"+id}
+function closeSheet(){sheetFor=null;if(location.hash.startsWith("#r-"))history.replaceState(null,"","#"+view);render()}
+
+function renderNav(){const pend=myPending().length,exc=allExceptions().length;
+  const badge=k=>k==="today"&&pend?h("span",{class:"count"},pend):k==="exceptions"&&exc?h("span",{class:"count bad"},exc):null;
+  const mk=(cls)=>VIEWS.map(([k,l])=>h("a",{href:"#"+k,"aria-current":view===k&&!sheetFor?"page":null,class:cls},h("span",null,l),badge(k)));
+  $("#nav").replaceChildren(...mk());$("#mobnav").replaceChildren(...mk());
+  const who=$("#who");const role=roleNames(S.me.id);
+  who.replaceChildren(S.me.id?h("div",null,h("b",null,S.me.name||"Signed in"),S.me.email||"",h("div",null,role||(S.canWrite?"Contributor":"Read-only")),!S.domainOk?h("div",{style:"color:var(--bad)"},"Not a TUSOME address: read-only"):null):h("div",null,S.db?"Signed in":"Sign in to claude.ai to use the platform."))}
+function roleNames(id){if(!id)return"";const R=cfg().roles||{};const l=[];if(R.DIR===id)l.push("Director");if(R.ID===id)l.push("Independent Director");if(R.CUS===id)l.push("Finance custodian");if(S.me.isOwner)l.push("Owner");return l.join(" · ")}
+
+/* ============ views ============ */
+function render(){renderNav();const v=$("#view");const parts=[];
+  if(!S.db&&S._dbTried)parts.push(h("div",{class:"banner"},h("b",null,"Data is not available in this view. "),"Open the platform on claude.ai while signed in to your TUSOME account."));
+  else if(S.stale)parts.push(h("div",{class:"banner"},h("b",null,"Can't reach the data yet. "),"What you see may be out of date."));
+  if(S.db&&!S.canWrite)parts.push(h("div",{class:"banner info"},h("b",null,"Read-only access. "),"You can view every record and the audit trail. Changes are made by TUSOME staff."));
+  else if(S.db&&!S.domainOk)parts.push(h("div",{class:"banner"},h("b",null,"Read-only: "),"only @"+DOMAIN+" accounts can create or approve records."));
+  const fn={today:vToday,requests:vRequests,suppliers:vSuppliers,contracts:vContracts,exceptions:vExceptions,accounts:vAccounts,audit:vAudit,setup:vSetup}[view]||vToday;
+  parts.push(...[].concat(fn()));v.replaceChildren(...parts);renderSheet();resolveNames()}
+
+function header(title,sub,...actions){return h("div",{class:"head"},h("div",null,h("h1",null,title),sub?h("p",{class:"sub"},sub):null),actions.length?h("div",{class:"row"},...actions):null)}
+function newBtn(label,fn,admin){const can=admin?writable()&&S.me.canEdit:writable();return can?h("button",{class:"btn primary",onclick:fn},label):null}
+
+function vToday(){const reqs=Object.values(S.requests);const pend=myPending();const me=S.me.id;
+  const mine=reqs.filter(r=>r.requester===me&&!["paid","rejected"].includes(status(r).k));
+  const toPay=reqs.filter(r=>status(r).k==="payment");
+  const awaiting=reqs.filter(r=>status(r).k==="approval");
+  const monthKey=today().slice(0,7);const paidMonth=reqs.filter(r=>r.payment&&(r.payment.date||"").startsWith(monthKey)).reduce((t,r)=>t+(r.payment.currency==="USD"?n0(r.payment.amount)*(amounts(r).rate||0):n0(r.payment.amount)),0);
+  const exc=allExceptions();const fx=fxFor(today());
+  return [header("Habari"+(S.me.name?", "+S.me.name.split(" ")[0]:""),"What needs your attention today.",newBtn("New purchase request",()=>editRequest())),
+    h("div",{class:"tiles"},
+      tile(pend.length,"Waiting for your approval"),tile(awaiting.length,"Awaiting approval (all)"),tile(toPay.length,"Approved, awaiting payment"),tile(tzs(paidMonth),"Paid this month"),tile(exc.length,"Open exceptions"),tile(fx?Number(fx.rate).toLocaleString("en-GB",{maximumFractionDigits:2}):"—","TZS per USD"+(fx?" · "+fmtDate(fx.date):""))),
+    h("div",{class:"grid2"},
+      h("section",{class:"panel"},h("div",{class:"ph"},h("h2",null,"Your approvals")),reqList(pend,"Nothing waiting for you. Requests appear here when it is your turn in the approval chain.")),
+      h("section",{class:"panel"},h("div",{class:"ph"},h("h2",null,"Your open requests")),reqList(mine,"You have no open requests."))),
+    h("section",{class:"panel"},h("div",{class:"ph"},h("h2",null,"Exceptions"),h("a",{href:"#exceptions",class:"small"},"View all")),excTable(exc.slice(0,6)))]}
+function tile(v,l){return h("div",{class:"tile"},h("div",{class:"v"},v),h("div",{class:"l"},l))}
+function reqList(arr,empty){if(!S.loaded.requests)return h("div",{class:"empty"},"Loading…");if(!arr.length)return h("div",{class:"empty"},empty);
+  return h("div",{class:"list"},arr.map(r=>{const s=status(r);return h("button",{class:"li",onclick:()=>openRequest(r.id)},h("div",null,h("div",{class:"t"},r.title||"Untitled"),h("div",{class:"small muted"},r.id+" · "+(S.suppliers[r.supplierId]?.name||"No supplier")+" · "+nameOf(r.requester)),trail(r)),h("div",{style:"text-align:right"},h("div",{class:"num",style:"font-weight:700"},money(r.amount,r.currency)),pill(s.t,s.c)))}))}
+function trail(r){const ch=chainState(r);const s=status(r);const parts=[{s:r.submitted?"done":"now"},...ch.map(x=>({s:x.s==="done"?"done":x.s==="rej"?"gap":x.s==="now"?"now":""})),{s:r.delivery?"done":""},{s:r.invoice?(["Verified","Exception approved"].includes(r.invoice.fiscal)?"done":"gap"):""},{s:r.payment?(s.k==="paid"&&approvedAll(r)?"done":"gap"):""}];
+  return h("div",{class:"trail","aria-hidden":"true"},parts.map(p=>h("span",{class:p.s})))}
+
+function vRequests(){const reqs=Object.values(S.requests).sort((a,b)=>(b.date||"").localeCompare(a.date||"")||(b.id>a.id?1:-1));
+  const groups=[["all","All"],["draft","Draft"],["approval","Awaiting approval"],["approved","Approved"],["payment","Awaiting payment"],["paid","Paid"],["rejected","Rejected"]];
+  const cnt=k=>k==="all"?reqs.length:reqs.filter(r=>status(r).k===k).length;
+  let rows=reqs.filter(r=>tab==="all"||status(r).k===tab);
+  if(q){const ql=q.toLowerCase();rows=rows.filter(r=>[r.id,r.title,r.project,S.suppliers[r.supplierId]?.name,(r.payment||{}).trackerId].join(" ").toLowerCase().includes(ql))}
+  return [header("Purchase requests","Every purchase from "+fmtDate(cfg().policyDate)+" starts here. The band, quotations and approval route follow FIN-02 and GOV-01.",newBtn("New purchase request",()=>editRequest())),
+    h("section",{class:"panel"},
+      h("div",{class:"tabs",role:"tablist"},groups.map(([k,l])=>h("button",{role:"tab","aria-selected":tab===k?"true":"false",onclick:()=>{tab=k;render()}},l,h("span",{class:"n"},cnt(k))))),
+      h("div",{class:"toolbar"},h("input",{id:"q",type:"search",placeholder:"Search number, item, supplier, project",value:q,"aria-label":"Search requests",oninput:e=>{q=e.target.value;const p=e.target.selectionStart;render();const el=$("#q");el.focus();el.setSelectionRange(p,p)}}),h("span",{class:"small muted"},rows.length+" shown")),
+      !S.loaded.requests?h("div",{class:"empty"},"Loading requests…"):!rows.length?h("div",{class:"empty"},reqs.length?"No requests match.":"No purchase requests yet. Select “New purchase request” to raise the first one."):
+      h("div",{class:"tbl"},h("table",null,h("thead",null,h("tr",null,["Number","Date","Item","Supplier","Requested by","Band","Amount","Status"].map((t,i)=>h("th",{class:i===6?"num":null},t)))),
+        h("tbody",null,rows.map(r=>{const s=status(r);const ck=checks(r);return h("tr",{class:"click",onclick:()=>openRequest(r.id)},
+          h("td",{class:"mono"},r.id),h("td",{class:"small",style:"white-space:nowrap"},fmtDate(r.date)),
+          h("td",null,h("div",{style:"font-weight:600"},r.title||"Untitled"),h("div",{class:"small muted"},r.project||""),trail(r)),
+          h("td",null,S.suppliers[r.supplierId]?.name||"—"),h("td",null,nameOf(r.requester)),h("td",null,"Band "+band(r)),
+          h("td",{class:"num"},money(r.amount,r.currency)),h("td",null,pill(s.t,s.c),ck.length?h("div",{class:"small",style:"color:var(--bad);margin-top:4px"},ck.length+" issue"+(ck.length>1?"s":"")):null))})))))]}
+
+function vSuppliers(){const list=Object.values(S.suppliers).sort((a,b)=>(a.name||"").localeCompare(b.name||""));const v=list.filter(supplierVerified).length;
+  return [header("Suppliers","F07 onboarding: legal name, TIN, EFD/VFD receipts, payment details confirmed by call-back, and a conflict-of-interest declaration. "+v+" of "+list.length+" verified.",newBtn("Add supplier",()=>editSupplier())),
+    h("section",{class:"panel"},!list.length?h("div",{class:"empty"},"No suppliers yet."):h("div",{class:"tbl"},h("table",null,h("thead",null,h("tr",null,["ID","Legal name","Type","TIN","EFD/VFD","Call-back","Conflict","F07"].map(t=>h("th",null,t)))),
+      h("tbody",null,list.map(s=>h("tr",{class:"click",onclick:()=>editSupplier(s.id)},h("td",{class:"mono"},s.id),h("td",null,h("div",{style:"font-weight:600"},s.name),s.notes?h("div",{class:"small muted"},s.notes):null),h("td",null,s.type||"—"),h("td",{class:"mono"},s.tin||"—"),h("td",null,s.efd||"Unknown"),h("td",null,s.callback||"No"),h("td",null,s.coi||"Not obtained"),h("td",null,supplierVerified(s)?pill("Verified","p-ok"):pill("Not verified","p-bad"))))))))]}
+
+function vContracts(){const list=Object.values(S.contracts).sort((a,b)=>(a.id>b.id?1:-1));
+  return [header("Contracts","Contracts and consultancy agreements. Consultancy needs a ToR, IP assignment to TUSOME, SAF-01 where children are involved, and DATA-02.",newBtn("Add contract",()=>editContract())),
+    h("section",{class:"panel"},!list.length?h("div",{class:"empty"},"No contracts yet. Add one when a purchase needs a written agreement."):h("div",{class:"tbl"},h("table",null,h("thead",null,h("tr",null,["ID","Title","Supplier","Type","End","Value","Invoiced","Status","Checks"].map((t,i)=>h("th",{class:i===5||i===6?"num":null},t)))),
+      h("tbody",null,list.map(c=>{const ck=contractChecks(c);return h("tr",{class:"click",onclick:()=>editContract(c.id)},h("td",{class:"mono"},c.id),h("td",null,c.title),h("td",null,S.suppliers[c.supplierId]?.name||"—"),h("td",null,c.type||"—"),h("td",{class:"small"},fmtDate(c.end)),h("td",{class:"num"},money(c.value,c.currency)),h("td",{class:"num"},money(invoicedFor(c.id),c.currency)),h("td",null,c.status||"Draft"),h("td",null,ck.length?ck.map(x=>pill(x[0],"p-bad")):pill("OK","p-ok")))})))))]}
+
+function vExceptions(){const exc=allExceptions();const by={};exc.forEach(e=>by[e.k]=(by[e.k]||0)+1);
+  return [header("Exceptions","Control gaps found across requests, suppliers, contracts and rules. Fix each in its record; the list updates live."),
+    h("div",{class:"tiles"},Object.keys(by).length?Object.entries(by).map(([k,v])=>tile(v,k)):tile(0,"Open exceptions")),
+    h("section",{class:"panel"},excTable(exc)),
+    h("div",{class:"banner info"},h("b",null,"Monthly manual check: "),"filter the expenditure tracker for payments above "+tzs(cfg().band1Tzs)+" and confirm each has a request number here. The tracker is an Excel file, so this check is not automatic.")]}
+function excTable(exc){if(!exc.length)return h("div",{class:"empty"},"No exceptions.");
+  return h("div",{class:"tbl"},h("table",null,h("thead",null,h("tr",null,["Check","Reference","Supplier","Amount","Detail"].map((t,i)=>h("th",{class:i===3?"num":null},t)))),
+    h("tbody",null,exc.map(e=>h("tr",{class:"click",onclick:e.go},h("td",null,pill(e.k,"p-bad")),h("td",{class:"mono"},e.ref),h("td",null,e.who),h("td",{class:"num"},e.amt==null?"—":tzs(e.amt)),h("td",{class:"small"},e.d))))))}
+
+function vAccounts(){const list=Object.values(S.accounts).sort((a,b)=>(a.id>b.id?1:-1));
+  return [header("Bank & wallets","Company accounts, wallets, gateways and signatories, plus personal accounts used for company payments. Only the last four digits of any number are stored. Only Editors (the Director) can change this page.",newBtn("Add account",()=>editAccount(),true)),
+    h("section",{class:"panel"},!list.length?h("div",{class:"empty"},"No accounts recorded."):h("div",{class:"tbl"},h("table",null,h("thead",null,h("tr",null,["ID","Account","Type","Holder","Last 4","Signatories","Status","Last reconciled"].map(t=>h("th",null,t)))),
+      h("tbody",null,list.map(a=>h("tr",{class:S.me.canEdit&&writable()?"click":null,onclick:S.me.canEdit&&writable()?()=>editAccount(a.id):null},h("td",{class:"mono"},a.id),h("td",null,h("div",{style:"font-weight:600"},a.name),h("div",{class:"small muted"},(a.provider||"")+(a.notes?" · "+a.notes:""))),h("td",null,a.type||"—"),h("td",null,a.holder||"—"),h("td",{class:"mono"},a.last4||"—"),h("td",null,a.signatories||"—"),h("td",null,pill(a.status||"To confirm",a.status==="Active"?"p-ok":a.status==="Personal account used for company payments"?"p-bad":"p-warn")),h("td",{class:"small"},fmtDate(a.reconciled))))))))]}
+
+function vAudit(){const list=Object.values(S.audit).sort((a,b)=>b.at.localeCompare(a.at));let rows=list;
+  if(S._af){const f=S._af.toLowerCase();rows=list.filter(a=>[a.entityId,a.action,a.summary,nameOf(a.by)].join(" ").toLowerCase().includes(f))}
+  return [header("Audit trail","Every change made through the platform, with who made it and when. Each person's entries are stored under their own account; nobody else can alter them."),
+    h("section",{class:"panel"},h("div",{class:"toolbar"},h("input",{id:"af",type:"search",placeholder:"Filter by person, record or action",value:S._af||"","aria-label":"Filter audit trail",oninput:e=>{S._af=e.target.value;const p=e.target.selectionStart;render();const el=$("#af");el.focus();el.setSelectionRange(p,p)}}),h("span",{class:"small muted"},rows.length+" entries")),
+      !rows.length?h("div",{class:"empty"},"No activity recorded yet."):h("div",{class:"tbl"},h("table",null,h("thead",null,h("tr",null,["When","Who","Action","Record","Detail"].map(t=>h("th",null,t)))),
+        h("tbody",null,rows.slice(0,500).map(a=>h("tr",{class:a.entity==="request"?"click":null,onclick:a.entity==="request"?()=>openRequest(a.entityId):null},h("td",{class:"small",style:"white-space:nowrap"},fmtTime(a.at)),h("td",null,nameOf(a.by)),h("td",null,a.action),h("td",{class:"mono"},a.entityId||"—"),h("td",{class:"small"},a.summary||"")))))))]}
+
+function vSetup(){const c=cfg();const admin=writable()&&S.me.canEdit;const R=c.roles||{};
+  const rates=(c.fxRates||[]).slice().sort((a,b)=>b.date.localeCompare(a.date));
+  return [header("Rules & roles","These settings drive every calculation. Only Editors (the Director) can change them, and each change is logged.",admin?h("button",{class:"btn",onclick:editRules},"Edit thresholds"):null),
+    h("div",{class:"grid2"},
+      h("section",{class:"panel"},h("div",{class:"ph"},h("h2",null,"Approvers"),admin?h("button",{class:"btn sm",onclick:editRoles},"Assign"):null),
+        h("div",{style:"padding:12px 16px"},h("dl",null,h("dt",null,"Director"),h("dd",null,R.DIR?nameOf(R.DIR):pill("Not assigned","p-bad")),h("dt",null,"Independent Director"),h("dd",null,R.ID?nameOf(R.ID):pill("Not assigned","p-bad")),h("dt",null,"Finance custodian"),h("dd",null,R.CUS?nameOf(R.CUS):pill("Not assigned","p-warn"))),
+          h("p",{class:"small muted",style:"margin:10px 0 0"},"Band 1 and 2 need the Independent Director. Band 3 needs the Independent Director, then the Director. Nobody approves their own request."))),
+      h("section",{class:"panel"},h("div",{class:"ph"},h("h2",null,"Quotation bands")),
+        h("div",{class:"tbl"},h("table",null,h("thead",null,h("tr",null,["Band","Applies to","Quotes","Approval"].map(t=>h("th",null,t)))),h("tbody",null,[1,2,3].map(n=>h("tr",null,h("td",null,n),h("td",null,bandText(n)),h("td",null,n),h("td",null,n===3?"Independent Director, then Director":"Independent Director")))))),
+        h("div",{class:"small muted",style:"padding:10px 16px"},"Split-purchase window: "+c.splitDays+" days · Policy start: "+fmtDate(c.policyDate)+" · Contract warning: "+c.contractWarnDays+" days"))),
+    h("section",{class:"panel"},h("div",{class:"ph"},h("h2",null,"Approval FX rates (TZS per USD)"),admin?h("button",{class:"btn sm",onclick:addRate},"Add rate"):null),
+      h("div",{class:"tbl"},h("table",null,h("thead",null,h("tr",null,["Effective","TZS per USD","Status","Source"].map((t,i)=>h("th",{class:i===1?"num":null},t)))),h("tbody",null,rates.map(r=>h("tr",null,h("td",{class:"small"},fmtDate(r.date)),h("td",{class:"num"},Number(r.rate).toLocaleString("en-GB",{maximumFractionDigits:4})),h("td",null,pill(r.status,r.status==="BoT mean rate"||r.status==="Confirmed by accountant"?"p-ok":"p-mute")),h("td",{class:"small"},r.source||""))))))),
+    h("section",{class:"panel"},h("div",{class:"ph"},h("h2",null,"Withholding tax rates")),
+      h("div",{class:"tbl"},h("table",null,h("thead",null,h("tr",null,["Payment","Resident","Non-resident","Note"].map(t=>h("th",null,t)))),h("tbody",null,(c.wht||[]).map(w=>h("tr",null,h("td",null,w.type),h("td",null,w.res),h("td",null,w.nonres),h("td",{class:"small "+(w.note&&/confirm/i.test(w.note)?"":"muted"),style:w.note&&/confirm/i.test(w.note)?"color:var(--warn)":null},w.note||"")))))),
+      h("div",{class:"small muted",style:"padding:10px 16px"},c.whtSource||""))]}
+
+/* ============ request sheet ============ */
+function renderSheet(){const root=$("#sheetRoot");if(!sheetFor){root.replaceChildren();return}
+  const r=S.requests[sheetFor.id];if(!r){root.replaceChildren(h("div",{class:"scrim",onclick:closeSheet}),h("aside",{class:"sheet",role:"dialog","aria-label":"Request"},h("div",{class:"sh-head"},h("h2",null,sheetFor.id),h("button",{class:"x",onclick:closeSheet,"aria-label":"Close"},"×")),h("div",{class:"sh-body"},h("div",{class:"empty"},S.loaded.requests?"This request does not exist or you cannot see it.":"Loading…"))));return}
+  const s=status(r),a=amounts(r),b=band(r),sup=S.suppliers[r.supplierId],me=S.me.id,R=cfg().roles||{};
+  const canW=writable();const ch=chainState(r);const ck=checks(r);const isReq=r.requester===me;
+  const acts=[];
+  if(canW&&!r.submitted){acts.push(h("button",{class:"btn",onclick:()=>editRequest(r.id)},"Edit"));acts.push(h("button",{class:"btn primary",onclick:()=>submitReq(r)},"Submit for approval"))}
+  if(canW&&r.submitted&&!approvedAll(r)&&!r.payment)acts.push(h("button",{class:"btn",onclick:()=>recallReq(r)},rejected(r)?"Revise and resubmit":"Recall to draft"));
+  const now=ch.find(x=>x.s==="now");
+  if(canW&&now&&R[now.role]===me&&!isReq){acts.push(h("button",{class:"btn ok",onclick:()=>decide(r,now.role,"Approved")},"Approve"));acts.push(h("button",{class:"btn danger",onclick:()=>decide(r,now.role,"Rejected")},"Reject"))}
+  if(canW&&approvedAll(r)&&!r.delivery)acts.push(h("button",{class:"btn primary",onclick:()=>recordDelivery(r)},"Confirm delivery (F08)"));
+  if(canW&&approvedAll(r)&&r.delivery&&!r.invoice)acts.push(h("button",{class:"btn primary",onclick:()=>recordInvoice(r)},"Record invoice"));
+  if(canW&&r.invoice&&!r.payment&&approvedAll(r))acts.push(h("button",{class:"btn primary",onclick:()=>recordPayment(r)},"Record payment"));
+  if(canW&&(r.invoice||r.payment||r.retro))acts.push(h("button",{class:"btn",onclick:()=>editEvidence(r)},"Evidence & tax"));
+  const hist=Object.values(S.audit).filter(x=>x.entityId===r.id).sort((x,y)=>y.at.localeCompare(x.at));
+  const body=h("div",{class:"sh-body"},
+    r.retro?h("div",{class:"banner"},h("b",null,"Retrospective entry. "),r.notes||"Created from the expenditure tracker to record a control gap."):null,
+    acts.length?h("div",{class:"row"},acts):null,
+    ck.length?h("div",{class:"sec"},h("h3",null,"Issues"),h("div",{class:"flags"},ck.map(c=>h("span",{class:"pill p-bad",title:c[1]},c[0]))),h("ul",{class:"small",style:"margin:6px 0 0;padding-left:18px"},ck.map(c=>h("li",null,c[0]+": "+c[1])))):null,
+    h("div",{class:"sec"},h("h3",null,"Approval chain"),h("div",{class:"chain"},
+      h("div",{class:"step done"},h("div",{class:"dot"},"✓"),h("div",null,h("div",{class:"st"},"Raised by "+nameOf(r.requester)),h("div",{class:"small muted"},fmtDate(r.date)+(r.submittedAt?" · submitted "+fmtTime(r.submittedAt):" · not submitted")+(r.rev>1?" · revision "+r.rev:"")))),
+      ch.map(x=>h("div",{class:"step "+(x.s==="done"?"done":x.s==="rej"?"rej":x.s==="now"?"now":"")},h("div",{class:"dot"},x.s==="done"?"✓":x.s==="rej"?"✕":""),h("div",null,h("div",{class:"st"},ROLE_LABEL[x.role]+(R[x.role]?" · "+nameOf(R[x.role]):" · not assigned")),
+        h("div",{class:"small muted"},x.dec?(x.dec.decision+" by "+nameOf(x.dec.by)+" on "+fmtTime(x.dec.at)):x.s==="now"?"Waiting for decision":"Not yet reached"),x.dec&&x.dec.comment?h("div",{class:"small"},"“"+x.dec.comment+"”"):null))))),
+    h("div",{class:"sec"},h("h3",null,"Request"),h("dl",null,
+      h("dt",null,"Item"),h("dd",null,r.title||"—"),h("dt",null,"Purpose"),h("dd",null,r.purpose||"—"),h("dt",null,"Project / client"),h("dd",null,r.project||"—"),h("dt",null,"Category"),h("dd",null,r.category||"—"),h("dt",null,"Type"),h("dd",null,r.kind||"—"),
+      h("dt",null,"Supplier"),h("dd",null,sup?sup.name+" ("+sup.id+") ":"—",sup?(supplierVerified(sup)?pill("F07 verified","p-ok"):pill("Not verified","p-bad")):null),
+      h("dt",null,"Amount"),h("dd",null,money(r.amount,r.currency)+(r.currency==="USD"?" · "+(a.tzs!=null?tzs(a.tzs):"no FX rate"):" · "+(a.usd!=null?money(a.usd,"USD"):"no FX rate"))),
+      h("dt",null,"FX rate used"),h("dd",null,a.fx?Number(a.rate).toLocaleString("en-GB",{maximumFractionDigits:4})+" ("+a.fx.status+", "+fmtDate(a.fx.date)+")":"None"),
+      h("dt",null,"Band"),h("dd",null,"Band "+b+": "+bandText(b)+" · needs "+b+" quote"+(b>1?"s":"")),
+      h("dt",null,"Quotations"),h("dd",null,(r.quotes||[]).length?h("ul",{style:"margin:0;padding-left:18px"},(r.quotes||[]).map(x=>h("li",null,(x.supplier||"Quote")+" · "+money(x.amount,r.currency)+" ",x.link?h("a",{href:x.link,target:"_blank",rel:"noopener"},"file"):null))):"None recorded",r.waiver?h("div",{class:"small"},"Waiver: "+r.waiver):null," ",pill(quotesState(r),quotesState(r)==="Short"?"p-bad":"p-ok")),
+      h("dt",null,"Contract"),h("dd",null,r.contractId||"—"),
+      h("dt",null,"F01 request"),h("dd",null,r.f01?h("a",{href:r.f01,target:"_blank",rel:"noopener"},"Open file"):"—"))),
+    h("div",{class:"sec"},h("h3",null,"Delivery, invoice and payment"),h("dl",null,
+      h("dt",null,"Delivery (F08)"),h("dd",null,r.delivery?fmtDate(r.delivery.date)+" ":"—",r.delivery?.link?h("a",{href:r.delivery.link,target:"_blank",rel:"noopener"},"file"):null),
+      h("dt",null,"Invoice"),h("dd",null,r.invoice?(r.invoice.no||"No number")+" · "+money(r.invoice.amount,r.currency)+" ":"—",r.invoice?.link?h("a",{href:r.invoice.link,target:"_blank",rel:"noopener"},"file"):null),
+      h("dt",null,"Fiscal receipt"),h("dd",null,r.invoice?.fiscal||"—"),
+      h("dt",null,"Payment"),h("dd",null,r.payment?money(r.payment.amount,r.payment.currency||r.currency)+" on "+fmtDate(r.payment.date)+" from "+(S.accounts[r.payment.account]?.name||r.payment.account||"—"):"—"),
+      h("dt",null,"Tracker Record ID"),h("dd",{class:"mono"},r.payment?.trackerId||"—"),
+      h("dt",null,"WHT"),h("dd",null,r.wht?(r.wht.applicable+(r.wht.amount?" · "+tzs(r.wht.amount):"")):"—"),
+      h("dt",null,"Evidence status"),h("dd",null,r.evidence?pill(r.evidence,r.evidence==="Complete"?"p-ok":"p-warn"):"—"),
+      r.notes&&!r.retro?[h("dt",null,"Notes"),h("dd",null,r.notes)]:null)),
+    h("div",{class:"sec"},h("h3",null,"History"),hist.length?h("div",{class:"small"},hist.map(x=>h("div",{style:"padding:6px 0;border-bottom:1px solid var(--line)"},h("b",null,x.action)," · "+nameOf(x.by)+" · "+fmtTime(x.at),x.summary?h("div",{class:"muted"},x.summary):null))):h("div",{class:"small muted"},"No recorded activity.")));
+  root.replaceChildren(h("div",{class:"scrim",onclick:closeSheet}),h("aside",{class:"sheet",role:"dialog","aria-label":"Purchase request "+r.id},
+    h("div",{class:"sh-head"},h("div",null,h("div",{class:"mono muted"},r.id),h("h2",{style:"font-size:18px;margin:2px 0 6px"},r.title||"Untitled"),h("div",{class:"row"},pill(s.t,s.c),h("span",{class:"num",style:"font-weight:800"},money(r.amount,r.currency)))),h("button",{class:"x",onclick:closeSheet,"aria-label":"Close"},"×")),body))}
+
+/* ============ dialogs ============ */
+const dlg=$("#dlg");
+function field(id,label,type,val,opts){opts=opts||{};let inp;
+  if(type==="select")inp=h("select",{id},[opts.blank!==false?h("option",{value:""},opts.blank||"Select…"):null,...opts.options.map(o=>{const[v,l]=Array.isArray(o)?o:[o,o];return h("option",{value:v,selected:String(val??"")===String(v)?true:null},l)})]);
+  else if(type==="textarea")inp=h("textarea",{id,rows:opts.rows||2},val||"");
+  else inp=h("input",{id,type,value:val??"",step:type==="number"?"any":null,min:type==="number"?"0":null,placeholder:opts.ph||null,maxlength:opts.max||null});
+  return h("label",{class:"f",style:opts.full?"grid-column:1/-1":null},label,inp,opts.hint?h("span",{class:"hint"},opts.hint):null)}
+const val=id=>{const el=document.getElementById(id);return el?el.value.trim():""};
+function openDlg(title,body,actions){dlg.replaceChildren(h("div",{class:"dh"},h("h2",null,title),h("button",{class:"x","aria-label":"Close",onclick:()=>dlg.close()},"×")),h("div",{class:"db"},body),h("div",{class:"df"},h("button",{class:"btn",onclick:()=>dlg.close()},"Cancel"),...actions));if(!dlg.open)dlg.showModal()}
+function saveBtn(label,fn){const b=h("button",{class:"btn primary",onclick:async()=>{b.disabled=true;try{const ok=await fn();if(ok!==false)dlg.close()}finally{b.disabled=false}}},label);return b}
+const supOptions=()=>Object.values(S.suppliers).sort((a,b)=>a.name.localeCompare(b.name)).map(s=>[s.id,s.name+" ("+s.id+")"+(supplierVerified(s)?"":" · not verified")]);
+
+function editRequest(id){if(!writable())return;const r=id?S.requests[id]:{currency:"TZS",date:today(),quotes:[]};let quotes=(r.quotes||[]).map(x=>Object.assign({},x));
+  const qBox=h("div",{style:"display:grid;gap:8px"});const rule=h("div",{class:"rule"});
+  function drawQ(){qBox.replaceChildren(...quotes.map((x,i)=>h("div",{class:"fg",style:"grid-template-columns:1.2fr .8fr 1.2fr auto;align-items:end"},
+    h("label",{class:"f"},"Quote from",h("input",{value:x.supplier||"",oninput:e=>x.supplier=e.target.value})),h("label",{class:"f"},"Amount",h("input",{type:"number",step:"any",min:"0",value:x.amount??"",oninput:e=>x.amount=e.target.value})),
+    h("label",{class:"f"},"Link to quote (F02/F09)",h("input",{type:"url",value:x.link||"",oninput:e=>x.link=e.target.value})),h("button",{class:"btn sm danger",onclick:()=>{quotes.splice(i,1);drawQ();preview()}},"Remove"))),
+    h("div",null,h("button",{class:"btn sm",onclick:()=>{quotes.push({});drawQ();preview()}},"Add quotation")))}
+  function preview(){const t={amount:val("f-amt"),currency:val("f-cur")||"TZS",date:val("f-date")||today(),fxDate:val("f-fxd")};if(!(n0(t.amount)>0)){rule.replaceChildren("Enter the expected cost to see which rules apply.");return}
+    const a=amounts(t),b=bandOf(a.tzs,a.usd);const kind=val("f-kind");const extra=kind.startsWith("Consultant")?" Consultant: signed ToR and contract before work starts, IP assigned to TUSOME, SAF-01 if working with children, withholding tax deducted.":kind.startsWith("Software")?" Subscription: a dated price page counts as the quote; check data-protection terms.":kind.startsWith("Event")?" Events and logistics should sit in the project's logistics plan.":"";
+    rule.replaceChildren(h("b",null,"Band "+b+": "+bandText(b)),"About "+(a.tzs!=null?tzs(a.tzs):"—")+" / "+(a.usd!=null?money(a.usd,"USD"):"—")+". Needs "+b+" written quotation"+(b>1?"s":"")+" ("+quotes.length+" added). Approval: "+(b===3?"Independent Director, then Director.":"Independent Director.")+extra)}
+  drawQ();
+  const body=h("div",{class:"fg"},
+    field("f-title","What do you need?","text",r.title,{full:true,ph:"e.g. Printing of endline test booklets"}),
+    field("f-purpose","Business purpose","textarea",r.purpose,{full:true}),
+    field("f-proj","Project / client","text",r.project),field("f-cat","Workplan category","select",r.category,{options:CATS}),
+    field("f-kind","Type of purchase","select",r.kind,{options:KINDS}),field("f-sup","Supplier","select",r.supplierId,{options:supOptions(),blank:"Select supplier…",hint:"Not listed? Add it under Suppliers first."}),
+    field("f-amt","Expected total cost","number",r.amount),field("f-cur","Currency","select",r.currency,{options:["TZS","USD"],blank:false}),
+    field("f-date","Date raised","date",r.date),field("f-fxd","FX rate date","date",r.fxDate,{hint:"Blank uses the date raised."}),
+    field("f-con","Contract ID (if any)","select",r.contractId,{options:Object.keys(S.contracts),blank:"None"}),field("f-f01","Link to F01 request form","url",r.f01),
+    h("div",{style:"grid-column:1/-1;display:grid;gap:6px"},h("div",{class:"f"},"Quotations"),qBox),
+    field("f-waiver","Quote waiver reason (only if approved)","text",r.waiver,{full:true}),
+    h("div",{style:"grid-column:1/-1"},rule));
+  body.addEventListener("input",preview);body.addEventListener("change",preview);
+  openDlg(id?"Edit "+id:"New purchase request",body,[saveBtn(id?"Save changes":"Save draft",async()=>{
+    const title=val("f-title"),amt=n0(val("f-amt"));if(!title||!(amt>0)){toast("Add what you need and the expected cost.");return false}
+    const data={title,purpose:val("f-purpose"),project:val("f-proj"),category:val("f-cat"),kind:val("f-kind"),supplierId:val("f-sup"),amount:amt,currency:val("f-cur")||"TZS",date:val("f-date")||today(),fxDate:val("f-fxd"),contractId:val("f-con"),f01:val("f-f01"),waiver:val("f-waiver"),
+      quotes:quotes.filter(x=>x.supplier||x.amount||x.link).map(x=>({supplier:x.supplier||"",amount:n0(x.amount),link:x.link||""}))};
+    await guard(async()=>{if(id){await S.db.doc("requests/"+id).update(data);await audit("Edited","request",id,data.title+" · "+money(data.amount,data.currency))}
+      else{const no=await nextNumber("prq","PRQ-"+new Date().getFullYear()+"-",3);await S.db.doc("requests/"+no).set(Object.assign(data,{id:no,requester:S.me.id,rev:1,submitted:false,createdAt:nowIso()}));await audit("Created","request",no,data.title+" · "+money(data.amount,data.currency));openRequest(no)}},id?"Saved":"Draft saved")})]);preview()}
+
+async function submitReq(r){const R=cfg().roles||{};if(!R.ID){toast("Ask the Director to assign the Independent Director under Rules & roles first.");return}
+  if(!r.supplierId){toast("Choose a supplier before submitting.");return}
+  if(quotesState(r)==="Short"){toast("Band "+band(r)+" needs "+band(r)+" quotations, or an approved waiver reason.");return}
+  await guard(async()=>{await S.db.doc("requests/"+r.id).update({submitted:true,submittedAt:nowIso()});await audit("Submitted for approval","request",r.id,"Band "+band(r)+" · "+money(r.amount,r.currency)+" · revision "+(r.rev||1))},"Submitted for approval")}
+async function recallReq(r){await guard(async()=>{await S.db.doc("requests/"+r.id).update({submitted:false,rev:(r.rev||1)+1});await audit(rejected(r)?"Returned for revision":"Recalled to draft","request",r.id,"New revision "+((r.rev||1)+1)+"; earlier approvals no longer apply")},"Back in draft")}
+function decide(r,role,decision){const body=h("div",{style:"display:grid;gap:10px"},h("div",{class:"rule"},h("b",null,r.id+" · "+(r.title||"")),money(r.amount,r.currency)+" · Band "+band(r)+" · "+(S.suppliers[r.supplierId]?.name||"no supplier")),
+  checks(r).length?h("div",{class:"banner"},"Open issues: "+checks(r).map(c=>c[0]).join(", ")):null,
+  field("d-c",decision==="Rejected"?"Reason for rejection (required)":"Comment (optional)","textarea","",{rows:3}));
+  openDlg((decision==="Approved"?"Approve as ":"Reject as ")+ROLE_LABEL[role],body,[saveBtn(decision==="Approved"?"Approve":"Reject",async()=>{const c=val("d-c");if(decision==="Rejected"&&!c){toast("Give a reason so the requester can fix it.");return false}
+    await guard(async()=>{const me=S.me.id;if(!S._apprIdx){await S.db.doc("approvals/"+me).set({since:nowIso()});S._apprIdx=true}
+      await S.db.doc("approvals/"+me+"/d/"+apprKey(r.id,r.rev||1,role)).set({reqId:r.id,rev:r.rev||1,role,decision,comment:c,by:me,at:nowIso(),amount:n0(r.amount),currency:r.currency,amountTzs:amounts(r).tzs});
+      await audit(decision,"request",r.id,ROLE_LABEL[role]+(c?": "+c:""))},decision==="Approved"?"Approved":"Rejected")})])}
+function recordDelivery(r){openDlg("Confirm delivery (F08)",h("div",{class:"fg"},field("v-d","Date delivered","date",today()),field("v-l","Link to signed F08","url",""),field("v-n","Note","text","",{full:true})),[saveBtn("Confirm delivery",async()=>{
+  await guard(async()=>{await S.db.doc("requests/"+r.id).update({delivery:{date:val("v-d")||today(),link:val("v-l"),note:val("v-n"),by:S.me.id}});await audit("Delivery confirmed","request",r.id,"F08 "+(val("v-l")?"attached":"not attached"))},"Delivery confirmed")})])}
+function recordInvoice(r){openDlg("Record invoice",h("div",{class:"fg"},field("i-no","Invoice number","text",""),field("i-amt","Invoice amount ("+r.currency+")","number",r.amount),field("i-l","Link to invoice","url",""),field("i-f","Fiscal receipt (EFD/VFD)","select","Not checked",{options:FISCAL,blank:false})),[saveBtn("Save invoice",async()=>{
+  const amt=n0(val("i-amt"));if(!(amt>0)){toast("Enter the invoice amount.");return false}
+  await guard(async()=>{await S.db.doc("requests/"+r.id).update({invoice:{no:val("i-no"),amount:amt,link:val("i-l"),fiscal:val("i-f")}});await audit("Invoice recorded","request",r.id,(val("i-no")||"No number")+" · "+money(amt,r.currency)+(Math.abs(amt-n0(r.amount))>0.5?" · differs from approved amount "+money(r.amount,r.currency):""))},"Invoice recorded")})])}
+function recordPayment(r){const accs=Object.values(S.accounts).map(a=>[a.id,a.name]);openDlg("Record payment",h("div",{class:"fg"},
+  h("div",{class:"rule",style:"grid-column:1/-1"},"Enter the payment in the expenditure tracker first, then copy its Record ID here. The tracker stays the book of payments."),
+  field("p-d","Payment date","date",today()),field("p-amt","Amount paid ("+r.currency+")","number",r.invoice?.amount||r.amount),field("p-acc","Paid from","select","",{options:accs}),field("p-t","Tracker Record ID","text","",{ph:"e.g. Q426-140"})),[saveBtn("Record payment",async()=>{
+  const amt=n0(val("p-amt"));const tid=val("p-t");if(!(amt>0)){toast("Enter the amount paid.");return false}if(!tid){toast("Add the tracker Record ID.");return false}
+  await guard(async()=>{await S.db.doc("requests/"+r.id).update({payment:{date:val("p-d")||today(),amount:amt,currency:r.currency,account:val("p-acc"),trackerId:tid,by:S.me.id}});await audit("Payment recorded","request",r.id,money(amt,r.currency)+" · tracker "+tid)},"Payment recorded")})])}
+function editEvidence(r){openDlg("Evidence & tax · "+r.id,h("div",{class:"fg"},field("e-s","Evidence status","select",r.evidence,{options:EVIDENCE}),field("e-f","Fiscal receipt","select",r.invoice?.fiscal||"Not checked",{options:FISCAL,blank:false}),field("e-w","WHT applicable","select",r.wht?.applicable,{options:["Yes","No","To confirm"]}),field("e-wa","WHT deducted (TZS)","number",r.wht?.amount),field("e-t","Tracker Record ID(s)","text",r.payment?.trackerId||r.trackerIds||""),field("e-n","Notes","textarea",r.notes,{full:true,rows:3})),[saveBtn("Save",async()=>{
+  const upd={evidence:val("e-s"),wht:{applicable:val("e-w"),amount:n0(val("e-wa"))},notes:val("e-n")};if(r.invoice)upd.invoice=Object.assign({},r.invoice,{fiscal:val("e-f")});if(r.payment)upd.payment=Object.assign({},r.payment,{trackerId:val("e-t")});else upd.trackerIds=val("e-t");
+  await guard(async()=>{await S.db.doc("requests/"+r.id).update(upd);await audit("Evidence updated","request",r.id,"Evidence: "+(upd.evidence||"—")+" · WHT: "+(upd.wht.applicable||"—"))},"Saved")})])}
+
+function editSupplier(id){const s=id?S.suppliers[id]:{};const ro=!writable();
+  const body=h("div",{class:"fg"},field("s-n","Legal name","text",s.name,{full:true}),field("s-tr","Trading name","text",s.trading),field("s-ty","Supplier type","select",s.type,{options:SUP_TYPES}),field("s-tin","TIN","text",s.tin),field("s-vrn","VRN (VAT)","text",s.vrn),
+    field("s-efd","Issues EFD/VFD receipts","select",s.efd||"Unknown",{options:["Yes","No","Unknown"],blank:false}),field("s-cp","Contact person","text",s.contact),field("s-ph","Phone","text",s.phone),field("s-em","Email","email",s.email),
+    field("s-pm","Preferred payment method","text",s.payMethod),field("s-bk","Bank or wallet provider","text",s.bank),field("s-l4","Account / wallet no. (last 4 digits only)","text",s.last4,{max:4}),field("s-cb","Payment details verified by call-back","select",s.callback||"No",{options:["Yes","No"],blank:false}),
+    field("s-vb","Verified by","text",s.verifiedBy),field("s-vd","Verification date","date",s.verifiedOn),field("s-coi","Conflict of interest","select",s.coi||"Not obtained",{options:["None declared","Declared","Not obtained"],blank:false}),field("s-cd","Conflict details","text",s.coiDetail),
+    field("s-f07","F07 form link","url",s.f07,{full:true}),field("s-no","Notes","textarea",s.notes,{full:true}));
+  if(ro){openDlg(s.name||"Supplier",body,[]);body.querySelectorAll("input,select,textarea").forEach(e=>e.disabled=true);return}
+  openDlg(id?"Supplier "+id:"Add supplier",body,[saveBtn("Save supplier",async()=>{const name=val("s-n");if(!name){toast("Add the legal name.");return false}const l4=val("s-l4");if(l4&&!/^\d{4}$/.test(l4)){toast("Store only the last 4 digits.");return false}
+    const data={name,trading:val("s-tr"),type:val("s-ty"),tin:val("s-tin"),vrn:val("s-vrn"),efd:val("s-efd"),contact:val("s-cp"),phone:val("s-ph"),email:val("s-em"),payMethod:val("s-pm"),bank:val("s-bk"),last4:l4,callback:val("s-cb"),verifiedBy:val("s-vb"),verifiedOn:val("s-vd"),coi:val("s-coi"),coiDetail:val("s-cd"),f07:val("s-f07"),notes:val("s-no")};
+    await guard(async()=>{if(id){await S.db.doc("suppliers/"+id).update(data);await audit("Edited","supplier",id,name+" · F07 "+(supplierVerified(Object.assign({},s,data))?"verified":"not verified"))}else{const no=await nextNumber("sup","SUP-",4);await S.db.doc("suppliers/"+no).set(Object.assign(data,{id:no,createdAt:nowIso()}));await audit("Created","supplier",no,name)}},"Supplier saved")})])}
+
+function editContract(id){const c=id?S.contracts[id]:{currency:"TZS",status:"Draft"};const ro=!writable();const cl=["Yes","No","Not applicable"];
+  const body=h("div",{class:"fg"},field("c-t","Contract title","text",c.title,{full:true}),field("c-s","Supplier","select",c.supplierId,{options:supOptions()}),field("c-ty","Contract type","select",c.type,{options:CON_TYPES}),
+    field("c-p","Project / client","text",c.project),field("c-r","Linked request","select",c.prq,{options:Object.keys(S.requests),blank:"None"}),field("c-st","Start date","date",c.start),field("c-en","End date","date",c.end),
+    field("c-v","Contract value","number",c.value),field("c-cu","Currency","select",c.currency,{options:["TZS","USD"],blank:false}),field("c-pt","Payment terms","text",c.terms,{full:true}),field("c-d","Deliverables","textarea",c.deliverables,{full:true}),
+    field("c-tor","ToR attached","select",c.tor,{options:cl}),field("c-ip","IP assigned to TUSOME","select",c.ip,{options:cl}),field("c-saf","SAF-01 safeguarding signed","select",c.saf,{options:cl}),field("c-da","DATA-02 data protection signed","select",c.data,{options:cl}),
+    field("c-sb","Signed for TUSOME by","text",c.signedBy),field("c-sd","Date signed","date",c.signedOn),field("c-l","Signed contract link","url",c.link),field("c-stt","Status","select",c.status,{options:CON_STATUS,blank:false}),field("c-n","Notes","textarea",c.notes,{full:true}));
+  if(ro){openDlg(c.title||"Contract",body,[]);body.querySelectorAll("input,select,textarea").forEach(e=>e.disabled=true);return}
+  openDlg(id?"Contract "+id:"Add contract",body,[saveBtn("Save contract",async()=>{const title=val("c-t");if(!title){toast("Add a title.");return false}
+    const data={title,supplierId:val("c-s"),type:val("c-ty"),project:val("c-p"),prq:val("c-r"),start:val("c-st"),end:val("c-en"),value:n0(val("c-v")),currency:val("c-cu"),terms:val("c-pt"),deliverables:val("c-d"),tor:val("c-tor"),ip:val("c-ip"),saf:val("c-saf"),data:val("c-da"),signedBy:val("c-sb"),signedOn:val("c-sd"),link:val("c-l"),status:val("c-stt"),notes:val("c-n")};
+    await guard(async()=>{if(id){await S.db.doc("contracts/"+id).update(data);await audit("Edited","contract",id,title+" · "+data.status)}else{const no=await nextNumber("con","CON-"+new Date().getFullYear()+"-",3);await S.db.doc("contracts/"+no).set(Object.assign(data,{id:no,createdAt:nowIso()}));await audit("Created","contract",no,title)}},"Contract saved")})])}
+
+function editAccount(id){if(!(writable()&&S.me.canEdit))return;const a=id?S.accounts[id]:{};
+  openDlg(id?"Account "+id:"Add account",h("div",{class:"fg"},field("a-n","Account name","text",a.name,{full:true}),field("a-t","Type","select",a.type,{options:ACC_TYPES}),field("a-p","Institution / provider","text",a.provider),field("a-l","Last 4 digits","text",a.last4,{max:4}),field("a-c","Currency","select",a.currency,{options:["TZS","USD"]}),
+    field("a-h","Holder","select",a.holder,{options:["Company","Personal","To confirm"]}),field("a-s","Signatories / authorised users","text",a.signatories),field("a-r","Approval rule for payments","text",a.rule),field("a-st","Status","select",a.status,{options:ACC_STATUS}),field("a-rc","Last reconciled","date",a.reconciled),field("a-no","Notes","textarea",a.notes,{full:true})),
+    [saveBtn("Save account",async()=>{const name=val("a-n");if(!name){toast("Add the account name.");return false}const l4=val("a-l");if(l4&&!/^\d{4}$/.test(l4)){toast("Store only the last 4 digits.");return false}
+      const data={name,type:val("a-t"),provider:val("a-p"),last4:l4,currency:val("a-c"),holder:val("a-h"),signatories:val("a-s"),rule:val("a-r"),status:val("a-st"),reconciled:val("a-rc"),notes:val("a-no")};
+      await guard(async()=>{if(id){await S.db.doc("accounts/"+id).update(data);await audit("Edited","account",id,name+" · "+data.status)}else{const no="ACC-"+String(Object.keys(S.accounts).length+1).padStart(2,"0");await S.db.doc("accounts/"+no).set(Object.assign(data,{id:no}));await audit("Created","account",no,name)}},"Account saved")})])}
+
+async function saveSettings(patch,action,summary){await guard(async()=>{await S.db.doc("config/settings").update(patch);await audit(action,"rules","settings",summary)},"Rules updated")}
+function editRules(){const c=cfg();openDlg("Thresholds",h("div",{class:"fg"},field("r-b1","Two-quote band starts at (TZS)","number",c.band1Tzs),field("r-th","Director approval above (USD)","number",c.thresholdUsd),field("r-sw","Split-purchase window (days)","number",c.splitDays),field("r-pd","Policy start date","date",c.policyDate),field("r-cw","Contract end warning (days)","number",c.contractWarnDays)),
+  [saveBtn("Save",async()=>{const p={band1Tzs:n0(val("r-b1")),thresholdUsd:n0(val("r-th")),splitDays:n0(val("r-sw")),policyDate:val("r-pd"),contractWarnDays:n0(val("r-cw"))};await saveSettings(p,"Thresholds changed","Band 2 from "+tzs(p.band1Tzs)+"; Director above USD "+p.thresholdUsd+"; split window "+p.splitDays+" days")})])}
+function addRate(){openDlg("Add approval FX rate",h("div",{class:"fg"},field("x-d","Effective date","date",today()),field("x-r","TZS per USD","number",""),field("x-s","Status","select","BoT mean rate",{options:["BoT mean rate","Confirmed by accountant","Placeholder"],blank:false}),field("x-src","Source","text","Bank of Tanzania mean rate, https://www.bot.go.tz/ExchangeRate/excRates",{full:true})),
+  [saveBtn("Add rate",async()=>{const rate=n0(val("x-r"));if(!(rate>0)){toast("Enter the rate.");return false}const list=(cfg().fxRates||[]).filter(x=>x.date!==val("x-d"));list.push({date:val("x-d"),rate,status:val("x-s"),source:val("x-src")});await saveSettings({fxRates:list},"FX rate added","TZS "+rate+" per USD from "+val("x-d"))})])}
+function editRoles(){const R=Object.assign({},cfg().roles||{});const body=h("div",{style:"display:grid;gap:14px"},h("p",{class:"small muted",style:"margin:0"},"Search your TUSOME organisation by name or email. Each person also needs the right access on this page: approvers at Contributor or above, the Director as Editor."),
+  ...[["DIR","Director"],["ID","Independent Director"],["CUS","Finance custodian"]].map(([k,l])=>personPicker(k,l,R)));
+  openDlg("Assign approvers",body,[saveBtn("Save approvers",async()=>{if(R.ID&&R.DIR&&R.ID===R.DIR){toast("The Director and Independent Director must be different people.");return false}
+    const prev=cfg().roles||{};const hist=JSON.parse(JSON.stringify(cfg().roleHistory||{}));for(const k of ["ID","DIR","CUS"]){if(prev[k]&&prev[k]!==R[k]){hist[k]=hist[k]||[];if(!hist[k].includes(prev[k]))hist[k].push(prev[k])}}
+    await saveSettings({roles:R,roleHistory:hist},"Approvers assigned","Director: "+nameOf(R.DIR)+"; Independent Director: "+nameOf(R.ID)+"; Custodian: "+nameOf(R.CUS))})])}
+function personPicker(key,label,R){const cur=h("div",{class:"small"},R[key]?nameOf(R[key]):"Not assigned");const menu=h("div",{class:"menu",hidden:true});
+  const inp=h("input",{type:"search",placeholder:"Search name or email","aria-label":label,onfocus:()=>run(""),oninput:e=>run(e.target.value),onblur:()=>setTimeout(()=>menu.hidden=true,200)});
+  async function run(qs){if(!S.user)return;const hits=await S.user.search(qs);menu.replaceChildren(...(hits.length?hits.map(p=>h("button",{type:"button",onmousedown:()=>{R[key]=p.id;S.names[p.id]=p.name;cur.textContent=p.name+(p.email?" · "+p.email:"");inp.value="";menu.hidden=true}},p.name+(p.email?" · "+p.email:""))):[h("div",{class:"small muted",style:"padding:8px 10px"},"No match")]));menu.hidden=false}
+  return h("div",{class:"f"},label,cur,h("div",{class:"picker"},inp,menu),R[key]?h("button",{class:"btn sm",type:"button",onclick:()=>{R[key]="";cur.textContent="Not assigned"}},"Clear"):null)}
+
+/* ============ boot ============ */
+render();
+(async()=>{
+  try{S.user=await window.claude?.use?.("user")}catch(e){S.user=null}
+  if(S.user){try{const me=await S.user.me();S.me={id:me.id,name:me.name||"",email:me.email,canEdit:!!me.canEdit,isOwner:!!me.isOwner};const cw=await S.user.can("data.write");S.canWrite=cw!==false;
+    S.domainOk=!me.email||me.email.toLowerCase().endsWith("@"+DOMAIN)||me.isOwner;if(me.id)S.names[me.id]=me.name||""}catch(e){}}
+  try{S.db=await window.claude?.use?.("db")}catch(e){S.db=null}
+  S._dbTried=true;if(!S.db){render();return}
+  const timer=setTimeout(()=>{S.stale=true;render()},10000);const clear=()=>{clearTimeout(timer);if(S.stale){S.stale=false}};
+  const onErr=e=>{console.warn(e);clear();render()};
+  S.db.doc("config/settings").onSnapshot(sn=>{S.settings=sn.exists?sn.data():null;S.loaded.settings=true;if(!sn.metadata.fromCache)clear();render()},onErr);
+  const coll=(name,key,flag)=>S.db.collection(name).onSnapshot(sn=>{const m={};sn.docs.forEach(d=>m[d.id]=Object.assign({id:d.id},d.data()));S[key]=m;if(flag)S.loaded[flag]=true;if(!sn.metadata.fromCache)clear();render()},onErr);
+  coll("requests","requests","requests");coll("suppliers","suppliers");coll("contracts","contracts");coll("accounts","accounts");
+  const fanout=(root,sub,store,bag,lim)=>S.db.collection(root).onSnapshot(sn=>{sn.docs.forEach(d=>{const uid=d.id;if(bag[uid])return;
+    let q2=S.db.collection(root+"/"+uid+"/"+sub);if(lim)q2=q2.orderBy("at","desc").limit(lim);
+    bag[uid]=q2.onSnapshot(s2=>{for(const k of Object.keys(S[store]))if(S[store][k]._u===uid)delete S[store][k];
+      s2.docs.forEach(x=>{const v=Object.assign({_u:uid},x.data());if(store==="approvals"){if(v.by!==uid)return;S.approvals[apprKey(v.reqId,v.rev,v.role)]=v}else S.audit[uid+"/"+x.id]=Object.assign({by:uid},v,{by:uid})});render()},onErr)})},onErr);
+  fanout("approvals","d","approvals",subs.appr,0);fanout("audit","e","audit",subs.aud,400);
+  readHash();
+})();
+</script>
