@@ -95,7 +95,7 @@ function myPending(){const me=S.email;return Object.values(S.requests).filter(r=
 function rowToRequest(x){return Object.assign({},x.details||{},{id:x.id,requester:x.requester_email,date:x.date,supplierId:x.supplier_id,amount:n0(x.amount),currency:x.currency,submitted:x.submitted,submittedAt:x.submitted_at,rev:x.rev,retro:x.retro,_details:x.details||{}})}
 async function loadTable(name){
   if(name==="settings"){const{data,error}=await sb.from("settings").select("*").eq("id",1).maybeSingle();if(!error)S.settings=data;return}
-  if(name==="members"){const{data,error}=await sb.from("members").select("*");if(!error){S.members={};data.forEach(m=>S.members[m.email]=m);S.member=S.members[S.email]||null}return}
+  if(name==="members"){const{data,error}=await sb.from("members").select("*");if(error){S.loadError=error.message||String(error);console.error(error);return}S.loadError=null;S.members={};data.forEach(m=>S.members[m.email]=m);S.member=S.members[S.email]||null;return}
   if(name==="requests"){const{data,error}=await sb.from("requests").select("*");if(!error){S.requests={};data.forEach(x=>S.requests[x.id]=rowToRequest(x))}return}
   if(name==="approvals"){const{data,error}=await sb.from("approvals").select("*");if(!error){S.approvals={};data.forEach(a=>S.approvals[apprKey(a.request_id,a.rev,a.step)]=a)}return}
   if(name==="audit_log"){const{data,error}=await sb.from("audit_log").select("*").order("id",{ascending:false}).limit(500);if(!error)S.audit=data;return}
@@ -124,7 +124,7 @@ function authView(mode,msg){$("#appRoot").hidden=true;const root=$("#authRoot");
     card.onsubmit=async e=>{e.preventDefault();if(p1.value.length<10){err.textContent="Use at least 10 characters.";return}if(p1.value!==p2.value){err.textContent="The passwords do not match.";return}btn.disabled=true;const{error}=await sb.auth.updateUser({password:p1.value});btn.disabled=false;if(error){err.textContent=error.message;return}toast("Password saved");startApp()}}
   root.replaceChildren(h("div",{class:"auth"},card));const f=root.querySelector("input");if(f)f.focus()}
 async function startApp(){$("#authRoot").hidden=true;$("#appRoot").hidden=false;await loadAll();
-  if(!S.member||!S.member.active){$("#view").replaceChildren(h("div",{class:"banner"},h("b",null,"No access. "),"This login is not an active TUSOME Finance member. Ask the administrator to add "+S.email+"."));return}
+  if(!S.member||!S.member.active){$("#view").replaceChildren(h("div",{class:"banner"},h("b",null,"No access. "),S.loadError?"The database refused to load the member list: "+S.loadError+". The administrator should run supabase/003_fix_access.sql.":"This login is not an active TUSOME Finance member. Ask the administrator to add "+S.email+"."),h("div",{class:"row"},h("button",{class:"btn",onclick:()=>sb.auth.signOut()},"Sign out")));$("#nav").replaceChildren();$("#mobnav").replaceChildren();$("#who").replaceChildren(S.email||"");return}
   if(!S._subscribed){subscribe();S._subscribed=true}readHash()}
 function changePassword(){openDlg("Change password",h("div",{class:"fg"},field("cp-1","New password","password","",{hint:"At least 10 characters."}),field("cp-2","Repeat password","password","")),[saveBtn("Save password",async()=>{
   const a=val("cp-1"),b=val("cp-2");if(a.length<10){toast("Use at least 10 characters.");return false}if(a!==b){toast("The passwords do not match.");return false}

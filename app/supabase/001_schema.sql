@@ -271,6 +271,10 @@ create policy adm_settings  on public.settings  for update to authenticated usin
 create policy adm_members   on public.members   for all to authenticated using (has_role('admin')) with check (has_role('admin'));
 -- approvals: no direct writes (use decide()); audit_log: no writes at all from the app
 
+grant usage on schema public to authenticated;
+grant select, insert, update, delete on public.members, public.settings, public.suppliers,
+  public.contracts, public.accounts, public.requests to authenticated;
+grant usage, select on all sequences in schema public to authenticated;
 revoke all on public.approvals from anon, authenticated;
 grant select on public.approvals to authenticated;
 revoke all on public.audit_log from anon, authenticated;
