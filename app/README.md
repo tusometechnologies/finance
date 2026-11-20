@@ -22,6 +22,8 @@ Staff sign in with their **email (username) and password**. What each person can
 8. `supabase/008_control_panel.sql` — the alternate approver decides only the Director's own items above the threshold.
 9. `supabase/009_clear_historical_exceptions.sql` — marks the two retrospective requests as historical (no exceptions).
 10. `supabase/010_judith_separate_payments.sql` — records Q426-099 and Q426-107 as two separate, approved payments.
+11. `supabase/011_accounting_core.sql` — double-entry books: chart of accounts, journals, automatic posting of approved
+    payments / repayments / opening balances, manual journals, reversals, lock date; posts all existing records.
 
 ## Roles
 

@@ -18,13 +18,13 @@ const ROLES = ["admin","director","alt_director","approver","custodian","staff",
 const ROLE_NAME = {admin:"Administrator",director:"Director",alt_director:"Alternate for the Director's own items",approver:"Band 1–2 approver",custodian:"Finance custodian",staff:"Staff",auditor:"Auditor (read-only)"};
 const STEP_ROLE = {ID:"approver", DIR:"director"};
 const STEP_NAME = {ID:"Band 1–2 approver (Independent Director)", DIR:"Director"};
-const VIEWS = [["today","Today"],["payments","Payments"],["spending","Spending overview"],["owed","Who we owe"],["requests","Purchase requests"],["envelopes","Envelopes"],["bank","Bank & reconciliation"],["suppliers","Suppliers"],["contracts","Contracts"],["exceptions","Exceptions"],["audit","Audit trail"],["setup","Rules & roles"],["people","People & logins"]];
+const VIEWS = [["today","Today"],["payments","Payments"],["spending","Spending overview"],["owed","Who we owe"],["requests","Purchase requests"],["envelopes","Envelopes"],["accounting","Accounting"],["bank","Bank & reconciliation"],["suppliers","Suppliers"],["contracts","Contracts"],["exceptions","Exceptions"],["audit","Audit trail"],["setup","Rules & roles"],["people","People & logins"]];
 const TABS = [["today","Today","M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"],["payments","Payments","M4 7h16v11H4zM4 10h16M8 15h3"],["spending","Spending","M5 20V11M12 20V5M19 20v-7"],["owed","Owed","M12 3v18M17 7H9.5a3 3 0 0 0 0 6h5a3 3 0 0 1 0 6H6"],["more","More","M4 6h16M4 12h16M4 18h16"]];
 
 /* ============ state ============ */
 let sb = null;
 const S = {session:null,email:null,member:null,settings:null,members:{},requests:{},suppliers:{},contracts:{},accounts:{},approvals:{},audit:[],
-  envelopes:{},claims:{},payments:{},reimbursements:{},reconciliations:{},loaded:false};
+  gl:{},glmap:{},journals:{},jlines:[],envelopes:{},claims:{},payments:{},reimbursements:{},reconciliations:{},loaded:false};
 let view="today", tab="all", ptab="all", q="", pq="", af="", sheetFor=null, month=new Date().toISOString().slice(0,7);
 
 /* ============ helpers ============ */
@@ -147,12 +147,16 @@ async function loadTable(name){
   if(name==="requests"){const{data,error}=await sb.from("requests").select("*");if(!error){S.requests={};data.forEach(x=>S.requests[x.id]=rowToRequest(x))}return}
   if(name==="approvals"){const{data,error}=await sb.from("approvals").select("*");if(!error){S.approvals={};data.forEach(a=>S.approvals[apprKey(a.request_id,a.rev,a.step)]=a)}return}
   if(name==="audit_log"){const{data,error}=await sb.from("audit_log").select("*").order("id",{ascending:false}).limit(500);if(!error)S.audit=data;return}
+  if(name==="gl_accounts"){const{data,error}=await sb.from("gl_accounts").select("*");if(error){S.glMissing=true;return}S.glMissing=false;S.gl={};data.forEach(a=>S.gl[a.code]=a);return}
+  if(name==="gl_category_map"){const{data,error}=await sb.from("gl_category_map").select("*");if(!error){S.glmap={};data.forEach(m=>S.glmap[m.category]=m.account_code)}return}
+  if(name==="journals"){if(!seesBooks())return;const all=[];for(let f=0;;f+=1000){const{data,error}=await sb.from("journals").select("*").range(f,f+999);if(error||!data)break;all.push(...data);if(data.length<1000)break}S.journals={};all.forEach(j=>S.journals[j.id]=j);return}
+  if(name==="journal_lines"){if(!seesBooks())return;const all=[];for(let f=0;;f+=1000){const{data,error}=await sb.from("journal_lines").select("*").range(f,f+999);if(error||!data)break;all.push(...data);if(data.length<1000)break}S.jlines=all;return}
   if(ROW_TABLES.includes(name)){const{data,error}=await sb.from(name).select("*");if(error){console.warn(name,error.message);S.missing004=true;return}S[name]={};data.forEach(x=>S[name][x.id]=x);return}
   const{data,error}=await sb.from(name).select("*");if(!error){S[name]={};data.forEach(x=>S[name][x.id]=Object.assign({},x.data,{id:x.id}))}}
-const TABLES=["settings","members","suppliers","contracts","accounts","requests","approvals","audit_log",...ROW_TABLES];
-async function loadAll(){S.missing004=false;await Promise.all(TABLES.map(loadTable));S.loaded=true;render()}
+const TABLES=["gl_accounts","gl_category_map","journals","journal_lines","settings","members","suppliers","contracts","accounts","requests","approvals","audit_log",...ROW_TABLES];
+async function loadAll(){S.missing004=false;await loadTable("members");await Promise.all(TABLES.filter(t=>t!=="members").map(loadTable));S.loaded=true;render()}
 let refreshTimer=null;const pending=new Set();
-function scheduleRefresh(t){pending.add(t);pending.add("audit_log");clearTimeout(refreshTimer);refreshTimer=setTimeout(async()=>{const list=[...pending];pending.clear();await Promise.all(list.map(loadTable));render()},250)}
+function scheduleRefresh(t){pending.add(t);if(t==="journals"||t==="payments"||t==="reimbursements"){pending.add("journals");pending.add("journal_lines")}pending.add("audit_log");clearTimeout(refreshTimer);refreshTimer=setTimeout(async()=>{const list=[...pending];pending.clear();await Promise.all(list.map(loadTable));render()},250)}
 function subscribe(){sb.channel("live").on("postgres_changes",{event:"*",schema:"public"},p=>scheduleRefresh(p.table)).subscribe()}
 async function run(fn,okMsg,tables){try{const res=await fn();if(res&&res.error)throw res.error;if(okMsg)toast(okMsg);(tables||[]).forEach(scheduleRefresh);return res||true}catch(e){console.error(e);toast(friendly(e));return false}}
 function friendly(e){const m=(e&&(e.message||e.error_description))||"";if(/row-level security|permission denied/i.test(m))return "You do not have permission to do that.";if(/relation .* does not exist|Could not find the table/i.test(m))return "The database needs the latest update (run supabase/005_payments_ledger.sql).";return m||"Could not save. Try again."}
@@ -190,7 +194,7 @@ function readHash(){const x=(location.hash||"").slice(1);if(x.startsWith("r-")){
 window.addEventListener("hashchange",()=>{if(S.member)readHash()});
 const openRequest=id=>{location.hash="r-"+id};
 function closeSheet(){sheetFor=null;if(location.hash.startsWith("#r-"))history.replaceState(null,"","#"+view);render()}
-const visibleViews=()=>VIEWS.filter(([k])=>k!=="people"||isAdmin());
+const visibleViews=()=>VIEWS.filter(([k])=>(k!=="people"||isAdmin())&&(k!=="accounting"||seesBooks()));
 function badgeFor(k){const cd=myClaimDecisions().length;if(k==="today"){const n=myPending().length+cd;return n?h("span",{class:"count"},n):null}
   if(k==="exceptions"){const n=allExceptions().length;return n?h("span",{class:"count bad"},n):null}if(k==="payments"&&cd)return h("span",{class:"count"},cd);return null}
 function renderNav(){
@@ -209,8 +213,8 @@ function openMenu(){openDlg("Menu",h("div",{class:"menu-list"},
 function render(){if(!S.member)return;renderNav();const parts=[];
   if(S.missing004)parts.push(h("div",{class:"banner"},h("b",null,"Database update needed. "),"Payments, envelopes and reconciliations need supabase/004 and 005 to be run in Supabase."));
   if(!canWrite())parts.push(h("div",{class:"banner info"},h("b",null,"Read-only access. "),"You can view every record and the audit trail."));
-  const fn={today:vToday,requests:vRequests,payments:vPayments,spending:vSpending,owed:vOwed,envelopes:vEnvelopes,bank:vBank,suppliers:vSuppliers,contracts:vContracts,exceptions:vExceptions,audit:vAudit,setup:vSetup,people:vPeople}[view]||vToday;
-  parts.push(...[].concat(fn()));$("#view").replaceChildren(...parts);renderSheet()}
+  const fn={accounting:vAccounting,today:vToday,requests:vRequests,payments:vPayments,spending:vSpending,owed:vOwed,envelopes:vEnvelopes,bank:vBank,suppliers:vSuppliers,contracts:vContracts,exceptions:vExceptions,audit:vAudit,setup:vSetup,people:vPeople}[view]||vToday;
+  parts.push(...[].concat(fn()).filter(Boolean));$("#view").replaceChildren(...parts);renderSheet()}
 function header(title,sub,...actions){const a=actions.filter(Boolean);return h("div",{class:"head"},h("div",null,h("h1",null,title),sub?h("p",{class:"sub"},sub):null),a.length?h("div",{class:"row"},...a):null)}
 function newBtn(label,fn,ok){return (ok===undefined?canWrite():ok)?h("button",{class:"btn primary",onclick:fn},label):null}
 const tile=(v,l,onclick)=>h("div",{class:"tile",style:onclick?"cursor:pointer":null,onclick},h("div",{class:"v"},v),h("div",{class:"l"},l));
@@ -572,6 +576,129 @@ function vPeople(){if(!isAdmin())return [header("People & logins","Only administ
       list.map(m=>[m.email,m.full_name||"—",h("span",null,(m.roles||[]).map(r=>pill(ROLE_NAME[r]||r,r==="auditor"?"p-info":r==="staff"?"p-mute":"p-brand"))),m.active?pill("Active","p-ok"):pill("Disabled","p-bad"),
         h("span",{class:"row",style:"justify-content:flex-end"},h("button",{class:"btn sm",onclick:()=>editMember(m.email)},"Edit"),h("button",{class:"btn sm",onclick:()=>loginDialog(m.email)},"Set password"))]))),
     h("div",{class:"banner info"},h("b",null,"Passwords: "),"use “Set password” to create a login or reset it, then give the password to the person directly (not by email). They can change it after signing in. To remove access, edit the person and untick Active.")]}
+
+/* ============ accounting ============ */
+const seesBooks=()=>hasAny(["admin","director","alt_director","custodian","auditor"]);
+const keepsBooks=()=>hasAny(["admin","custodian"]);
+const GL_TYPES=["Asset","Liability","Equity","Income","Expense"];
+let atab="pl", acc={from:null,to:null,asAt:null,project:"",account:"",preset:"month"};
+function acctDefaults(){if(acc.from)return;const t=today();acc.to=t;acc.asAt=t;acc.from=t.slice(0,7)+"-01"}
+function setPreset(p){const t=today(),d=new Date(t+"T00:00:00");acc.preset=p;
+  if(p==="month"){acc.from=t.slice(0,7)+"-01";acc.to=t}
+  else if(p==="last"){const a=new Date(d.getFullYear(),d.getMonth()-1,1),b=new Date(d.getFullYear(),d.getMonth(),0);acc.from=iso(a);acc.to=iso(b)}
+  else if(p==="year"){acc.from=d.getFullYear()+"-01-01";acc.to=t}
+  else if(p==="since"){acc.from="2026-10-01";acc.to=t}
+  acc.asAt=acc.to;render()}
+const iso=d=>d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+const glName=c=>(S.gl[c]||{}).name||c;
+const natural=t=>t==="Asset"||t==="Expense"?1:-1;   // debit-natural accounts
+function linesIn(from,to,proj){return S.jlines.filter(l=>{const j=S.journals[l.journal_id];if(!j)return false;return (!from||j.date>=from)&&(!to||j.date<=to)&&(!proj||l.project===proj)})}
+function balances(lines){const b={};lines.forEach(l=>{b[l.account_code]=(b[l.account_code]||0)+n0(l.debit)-n0(l.credit)});return b}
+const fmtA=v=>{const r=Math.round(v);return r<0?"("+Math.abs(r).toLocaleString("en-GB")+")":r.toLocaleString("en-GB")};
+function amtCell(v,bold){return h("span",{class:"num",style:(bold?"font-weight:800;":"")+(v<0?"color:var(--bad)":"")},fmtA(v))}
+function reportTable(sections,cols){/* sections: [{title, rows:[[label,v1,v2..]], total:[label,v..]}] */
+  const head=h("tr",null,h("th",null,""),cols.map(c=>h("th",{class:"num"},c)));const body=[];
+  sections.forEach(s=>{if(s.title)body.push(h("tr",null,h("td",{colspan:cols.length+1,style:"font-weight:800;padding-top:16px;border-bottom:0"},s.title)));
+    s.rows.forEach(r=>body.push(h("tr",{class:r.go?"click":null,onclick:r.go||null},h("td",{style:"padding-left:26px"},r[0]),r.slice(1).map(v=>h("td",{class:"num"},amtCell(v))))));
+    if(s.total)body.push(h("tr",null,h("td",{style:"font-weight:800"},s.total[0]),s.total.slice(1).map(v=>h("td",{class:"num",style:"border-top:2px solid var(--ink)"},amtCell(v,true)))))});
+  return h("div",{class:"tbl"},h("table",null,h("thead",null,head),h("tbody",null,body)))}
+function prevPeriod(){const f=new Date(acc.from+"T00:00:00"),t=new Date(acc.to+"T00:00:00");const days=Math.round((t-f)/864e5)+1;
+  if(acc.preset==="month"||acc.preset==="last"){const a=new Date(f.getFullYear(),f.getMonth()-1,1),b=new Date(f.getFullYear(),f.getMonth(),0);return [iso(a),iso(b)]}
+  const b=new Date(f.getTime()-864e5),a=new Date(b.getTime()-(days-1)*864e5);return [iso(a),iso(b)]}
+function pnl(from,to,proj){const b=balances(linesIn(from,to,proj));const acs=Object.values(S.gl);
+  const inc=acs.filter(a=>a.type==="Income").map(a=>[a.code,-(b[a.code]||0)]).filter(x=>Math.abs(x[1])>0.5);
+  const exp=acs.filter(a=>a.type==="Expense").map(a=>[a.code,b[a.code]||0]).filter(x=>Math.abs(x[1])>0.5);
+  const ti=inc.reduce((t,x)=>t+x[1],0),te=exp.reduce((t,x)=>t+x[1],0);return{inc,exp,ti,te,net:ti-te}}
+function projects(){return [...new Set(S.jlines.map(l=>l.project).filter(Boolean))].sort()}
+
+function vAccounting(){if(!seesBooks())return [header("Accounting","Only administrators, the Director, the Finance custodian and the auditor can see the books.")];
+  acctDefaults();const tabs=[["pl","Profit & loss"],["bs","Balance sheet"],["tb","Trial balance"],["gl","General ledger"],["jn","Journals"],["coa","Chart of accounts"]];
+  const lock=(S.settings||{}).lock_date;
+  const period=h("div",{class:"toolbar"},
+    h("select",{"aria-label":"Period",onchange:e=>setPreset(e.target.value)},[["month","This month"],["last","Last month"],["since","Since 1 Oct 2026"],["year","This calendar year"],["custom","Custom dates"]].map(([k,l])=>h("option",{value:k,selected:acc.preset===k?true:null},l))),
+    atab==="bs"||atab==="tb"?h("label",{class:"row small",style:"gap:6px"},"As at",h("input",{type:"date",value:acc.asAt,onchange:e=>{acc.asAt=e.target.value;render()}})):
+      [h("label",{class:"row small",style:"gap:6px"},"From",h("input",{type:"date",value:acc.from,onchange:e=>{acc.from=e.target.value;acc.preset="custom";render()}})),h("label",{class:"row small",style:"gap:6px"},"To",h("input",{type:"date",value:acc.to,onchange:e=>{acc.to=e.target.value;acc.preset="custom";render()}}))],
+    atab==="pl"||atab==="gl"?h("select",{"aria-label":"Project",onchange:e=>{acc.project=e.target.value;render()}},h("option",{value:""},"All projects"),projects().map(p=>h("option",{value:p,selected:acc.project===p?true:null},p))):null);
+  const body={pl:aPL,bs:aBS,tb:aTB,gl:aGL,jn:aJN,coa:aCOA}[atab]();
+  return [header("Accounting","Double-entry books in TZS. Approved payments, repayments and opening balances post automatically; other entries are made as journals."+(lock?" Books locked up to "+fmtDate(lock)+".":""),
+      keepsBooks()?h("button",{class:"btn primary",onclick:()=>editJournal()},"New journal"):null,isAdmin()?h("button",{class:"btn",onclick:setLock},lock?"Lock date: "+fmtDate(lock):"Lock the books"):null),
+    S.glMissing?h("div",{class:"banner"},h("b",null,"Database update needed. "),"Run supabase/011_accounting_core.sql in Supabase to switch on the books."):null,
+    h("section",{class:"panel"},h("div",{class:"tabs",role:"tablist"},tabs.map(([k,l])=>h("button",{role:"tab","aria-selected":atab===k?"true":"false",onclick:()=>{atab=k;render()}},l))),["jn","coa"].includes(atab)?null:period,body)]}
+function aPL(){const cur=pnl(acc.from,acc.to,acc.project);const[pf,pt]=prevPeriod();const prv=pnl(pf,pt,acc.project);const pv=(list,c)=>((list.find(x=>x[0]===c)||[0,0])[1]);
+  const codes=(a,b)=>[...new Set(a.map(x=>x[0]).concat(b.map(x=>x[0])))].sort();
+  const cols=[fmtDate(acc.from)+" – "+fmtDate(acc.to),fmtDate(pf)+" – "+fmtDate(pt)];
+  const go=c=>()=>{acc.account=c;atab="gl";render()};
+  return h("div",null,reportTable([
+    {title:"Income",rows:codes(cur.inc,prv.inc).map(c=>Object.assign([c+" "+glName(c),pv(cur.inc,c),pv(prv.inc,c)],{go:go(c)})),total:["Total income",cur.ti,prv.ti]},
+    {title:"Expenses",rows:codes(cur.exp,prv.exp).map(c=>Object.assign([c+" "+glName(c),pv(cur.exp,c),pv(prv.exp,c)],{go:go(c)})),total:["Total expenses",cur.te,prv.te]},
+    {title:null,rows:[],total:[cur.net>=0?"Net profit":"Net loss",cur.net,prv.net]}],cols),
+    !cur.ti?h("div",{class:"small muted",style:"padding:0 16px 14px"},"No income is recorded yet. Client invoices and receipts come in the next phase; until then a receipt can be posted as a journal (for example Dr 1020 PesaPal, Cr 4000 Consulting income)."):null,
+    h("div",{class:"row",style:"padding:0 16px 14px"},h("button",{class:"btn sm",onclick:()=>csvDownload("profit-and-loss",[["Account",cols[0],cols[1]],...cur.inc.concat(cur.exp).map(x=>[x[0]+" "+glName(x[0]),Math.round(x[1]),Math.round(pv(prv.inc.concat(prv.exp),x[0]))]),["Net",Math.round(cur.net),Math.round(prv.net)]])},"Export CSV")))}
+function aBS(){const at=acc.asAt;const b=balances(linesIn(null,at));const acs=Object.values(S.gl).sort((a,c)=>a.code.localeCompare(c.code));
+  const sec=(type,sign)=>acs.filter(a=>a.type===type).map(a=>[a.code,sign*(b[a.code]||0)]).filter(x=>Math.abs(x[1])>0.5);
+  const A=sec("Asset",1),L=sec("Liability",-1),E=sec("Equity",-1);const earn=pnl(null,at).net;
+  const tA=A.reduce((t,x)=>t+x[1],0),tL=L.reduce((t,x)=>t+x[1],0),tE=E.reduce((t,x)=>t+x[1],0)+earn;const go=c=>()=>{acc.account=c;atab="gl";acc.from="2000-01-01";acc.to=at;acc.preset="custom";render()};
+  const diff=Math.round(tA-tL-tE);
+  return h("div",null,reportTable([{title:"Assets",rows:A.map(x=>Object.assign([x[0]+" "+glName(x[0]),x[1]],{go:go(x[0])})),total:["Total assets",tA]},
+    {title:"Liabilities",rows:L.map(x=>Object.assign([x[0]+" "+glName(x[0]),x[1]],{go:go(x[0])})),total:["Total liabilities",tL]},
+    {title:"Equity",rows:E.map(x=>Object.assign([x[0]+" "+glName(x[0]),x[1]],{go:go(x[0])})).concat([["Current earnings (profit or loss to date)",earn]]),total:["Total equity",tE]},
+    {title:null,rows:[],total:["Liabilities and equity",tL+tE]}],["As at "+fmtDate(at)]),
+    h("div",{class:"small",style:"padding:0 16px 14px;color:"+(diff?"var(--bad)":"var(--ok)")},diff?"Out of balance by "+fmtA(diff)+". Report this.":"Assets equal liabilities plus equity."),
+    (b["1020"]||0)<0||(b["1010"]||0)<0?h("div",{class:"banner",style:"margin:0 16px 14px"},"A bank account shows a negative balance because its opening balance and the money received into it are not recorded yet. Post the opening balance as a journal (Dr the bank, Cr 3900 Opening balance equity) and record receipts."):null)}
+function aTB(){const at=acc.asAt;const b=balances(linesIn(null,at));const acs=Object.values(S.gl).filter(a=>Math.abs(b[a.code]||0)>0.5).sort((a,c)=>a.code.localeCompare(c.code));
+  const rows=acs.map(a=>{const v=b[a.code];return [a.code,a.name,a.type,v>0?v:0,v<0?-v:0]});const td=rows.reduce((t,r)=>t+r[3],0),tc=rows.reduce((t,r)=>t+r[4],0);
+  return h("div",null,T([{l:"Account",primary:true},{l:"Type"},{l:"Debit",num:true},{l:"Credit",num:true}],rows.map(r=>[r[0]+" "+r[1],r[2],r[3]?fmtA(r[3]):"",r[4]?fmtA(r[4]):""]).concat([[h("b",null,"Total"),"",h("b",null,fmtA(td)),h("b",null,fmtA(tc))]]),i=>i<rows.length?()=>{acc.account=rows[i][0];acc.from="2000-01-01";acc.to=at;acc.preset="custom";atab="gl";render()}:null),
+    h("div",{class:"row",style:"padding:10px 16px"},h("span",{class:"small",style:"color:"+(Math.round(td-tc)?"var(--bad)":"var(--ok)")},Math.round(td-tc)?"Debits and credits differ by "+fmtA(td-tc):"Debits equal credits."),h("button",{class:"btn sm",onclick:()=>csvDownload("trial-balance-"+at,[["Code","Account","Type","Debit","Credit"],...rows.map(r=>[r[0],r[1],r[2],Math.round(r[3]),Math.round(r[4])])])},"Export CSV")))}
+function aGL(){const acs=Object.values(S.gl).sort((a,b)=>a.code.localeCompare(b.code));if(!acc.account&&acs.length)acc.account=(acs.find(a=>a.code==="1020")||acs[0]).code;
+  const a=S.gl[acc.account]||{};const open=balances(linesIn(null,new Date(new Date(acc.from+"T00:00:00").getTime()-864e5).toISOString().slice(0,10),acc.project))[acc.account]||0;
+  const ls=linesIn(acc.from,acc.to,acc.project).filter(l=>l.account_code===acc.account).sort((x,y)=>{const jx=S.journals[x.journal_id],jy=S.journals[y.journal_id];return (jx.date+jx.id).localeCompare(jy.date+jy.id)});
+  let run=open;const rows=ls.map(l=>{run+=n0(l.debit)-n0(l.credit);return [l,run]});const sign=natural(a.type);
+  return h("div",null,h("div",{class:"toolbar"},h("select",{"aria-label":"Account",onchange:e=>{acc.account=e.target.value;render()}},acs.map(x=>h("option",{value:x.code,selected:x.code===acc.account?true:null},x.code+" "+x.name)))),
+    h("div",{class:"small muted",style:"padding:8px 16px"},"Opening balance: "+fmtA(sign*open)+" · Closing balance: "+fmtA(sign*run)+(sign<0?" (credit balance shown as positive)":"")),
+    !rows.length?empty("No entries for this account in the period."):T([{l:"Description",primary:true},{l:"Date"},{l:"Journal",mono:true},{l:"Debit",num:true},{l:"Credit",num:true},{l:"Balance",num:true}],
+      rows.map(([l,b])=>{const j=S.journals[l.journal_id];return [h("div",null,h("div",null,l.description||j.memo),h("div",{class:"small muted"},[l.contact,l.project,l.currency!=="TZS"&&l.amount_fc?money(l.amount_fc,l.currency)+" @ "+n0(l.fx_rate).toLocaleString("en-GB",{maximumFractionDigits:2}):null].filter(Boolean).join(" · "))),fmtDate(j.date),j.id,n0(l.debit)?fmtA(l.debit):"",n0(l.credit)?fmtA(l.credit):"",fmtA(sign*b)]}),i=>()=>showJournal(rows[i][0].journal_id)))}
+function aJN(){const list=Object.values(S.journals).sort((a,b)=>(b.date+b.id).localeCompare(a.date+a.id));const tot=id=>S.jlines.filter(l=>l.journal_id===id).reduce((t,l)=>t+n0(l.debit),0);
+  const SRC={payment:"Payment",repayment:"Repayment",opening:"Opening balance",manual:"Manual journal",reversal:"Reversal"};
+  return !list.length?empty("No journals yet."):T([{l:"Memo",primary:true},{l:"Date"},{l:"Journal",mono:true},{l:"Source"},{l:"Amount",num:true},{l:"Status"}],
+    list.slice(0,400).map(j=>[j.memo,fmtDate(j.date),j.id,SRC[j.source]||j.source,fmtA(tot(j.id)),pill(j.status,j.status==="Posted"?"p-ok":"p-mute")]),i=>()=>showJournal(list[i].id))}
+function showJournal(id){const j=S.journals[id];if(!j)return;const ls=S.jlines.filter(l=>l.journal_id===id);const acts=[];
+  if(keepsBooks()&&j.status==="Posted"&&j.source!=="reversal")acts.push(h("button",{class:"btn danger",onclick:()=>{openDlg("Reverse "+j.id,h("div",{style:"display:grid;gap:10px"},h("div",{class:"rule"},"Posts an opposite entry dated today. "+(j.source==="payment"?"To change a payment, edit or reclassify the payment instead; it reposts automatically.":"")),field("rv-r","Reason (required)","text","",{full:true})),[saveBtn("Reverse",()=>{if(!val("rv-r")){toast("Give a reason.");return false}return run(()=>sb.rpc("reverse_journal",{p_id:j.id,p_reason:val("rv-r")}),"Reversed",["journals","journal_lines"])})])}},"Reverse"));
+  if(j.source==="payment"&&S.payments[j.source_id])acts.push(h("button",{class:"btn",onclick:()=>showPayment(j.source_id)},"Open payment"));
+  openDlg(j.id+" · "+fmtDate(j.date),h("div",{style:"display:grid;gap:12px"},h("div",null,h("b",null,j.memo),h("div",{class:"small muted"},(j.status==="Reversed"?"Reversed by "+j.reversed_by+" · ":"")+(j.reversal_of?"Reverses "+j.reversal_of+" · ":"")+"Posted by "+nameOf(j.created_by)+" · "+fmtTime(j.created_at))),
+    T([{l:"Account",primary:true},{l:"Description"},{l:"Debit",num:true},{l:"Credit",num:true}],ls.map(l=>[l.account_code+" "+glName(l.account_code),[l.description,l.project].filter(Boolean).join(" · "),n0(l.debit)?fmtA(l.debit):"",n0(l.credit)?fmtA(l.credit):""]))),acts)}
+function editJournal(){if(!keepsBooks())return;const lines=[{},{}];const box=h("div",{style:"display:grid;gap:8px"});const tot=h("div",{class:"rule"});
+  const opts=Object.values(S.gl).filter(a=>a.active).sort((a,b)=>a.code.localeCompare(b.code)).map(a=>[a.code,a.code+" "+a.name]);
+  function draw(){box.replaceChildren(...lines.map((l,i)=>h("div",{class:"qrow",style:"grid-template-columns:1.6fr .8fr .8fr auto"},
+    h("label",{class:"f"},"Account",h("select",{onchange:e=>{l.account=e.target.value}},h("option",{value:""},"Choose…"),opts.map(([k,t])=>h("option",{value:k,selected:l.account===k?true:null},t)))),
+    h("label",{class:"f"},"Debit",h("input",{type:"number",inputmode:"decimal",min:"0",step:"any",value:l.debit||"",oninput:e=>{l.debit=e.target.value;sum()}})),
+    h("label",{class:"f"},"Credit",h("input",{type:"number",inputmode:"decimal",min:"0",step:"any",value:l.credit||"",oninput:e=>{l.credit=e.target.value;sum()}})),
+    h("button",{class:"btn sm danger",type:"button",onclick:()=>{if(lines.length>2){lines.splice(i,1);draw()}}},"Remove"))),h("div",null,h("button",{class:"btn sm",type:"button",onclick:()=>{lines.push({});draw()}},"Add line")));sum()}
+  function sum(){const d=lines.reduce((t,l)=>t+n0(l.debit),0),c=lines.reduce((t,l)=>t+n0(l.credit),0);tot.replaceChildren(h("b",{style:"color:"+(Math.abs(d-c)<0.005&&d>0?"var(--ok)":"var(--bad)")},"Debits "+fmtA(d)+" · Credits "+fmtA(c)),Math.abs(d-c)<0.005&&d>0?"Balanced.":"Debits must equal credits.")}
+  draw();openDlg("New journal",h("div",{class:"fg"},field("j-d","Date","date",today()),field("j-p","Project (optional)","text",""),field("j-m","Description","text","",{full:true,ph:"e.g. Opening balance PesaPal at 1 Oct 2026"}),h("div",{style:"grid-column:1/-1"},box),h("div",{style:"grid-column:1/-1"},tot),
+    h("div",{class:"small muted",style:"grid-column:1/-1"},"Amounts in TZS. Examples: opening bank balance (Dr 1020 PesaPal, Cr 3900); client receipt (Dr 1020, Cr 4000); bank charges (Dr 6800, Cr 1020).")),
+    [saveBtn("Post journal",()=>{const ls=lines.filter(l=>l.account&&(n0(l.debit)||n0(l.credit))).map(l=>({account:l.account,debit:n0(l.debit),credit:n0(l.credit),description:val("j-m"),project:val("j-p")}));
+      if(ls.length<2){toast("Add at least two lines.");return false}return run(()=>sb.rpc("post_manual_journal",{p_date:val("j-d")||today(),p_memo:val("j-m"),p_lines:ls}),"Journal posted",["journals","journal_lines"])})])}
+function aCOA(){const b=balances(S.jlines);const acs=Object.values(S.gl).sort((a,c)=>a.code.localeCompare(c.code));
+  return h("div",null,isAdmin()?h("div",{class:"toolbar"},h("button",{class:"btn sm primary",onclick:()=>editGL()},"Add account"),h("button",{class:"btn sm",onclick:editMap},"Category mapping")):null,
+    GL_TYPES.map(t=>h("div",null,h("div",{style:"padding:12px 16px 4px;font-weight:800"},t+(t==="Asset"||t==="Liability"||t==="Equity"?" (balance sheet)":" (profit & loss)")),
+      T([{l:"Account",primary:true},{l:"Code",mono:true},{l:"Detail"},{l:"Balance",num:true},{l:"Status"}],acs.filter(a=>a.type===t).map(a=>[a.name,a.code,[a.subtype,a.bank_account_id?(S.accounts[a.bank_account_id]||{}).name:null].filter(Boolean).join(" · ")||"—",fmtA(natural(a.type)*(b[a.code]||0)),a.active?(a.system?pill("System","p-mute"):pill("Active","p-ok")):pill("Inactive","p-bad")]),
+        i=>{const a=acs.filter(x=>x.type===t)[i];return ()=>{if(isAdmin())editGL(a.code);else{acc.account=a.code;atab="gl";render()}}}))))}
+function editGL(code){const a=code?S.gl[code]:{type:"Expense",active:true};
+  openDlg(code?"Account "+code:"Add account",h("div",{class:"fg"},field("g-c","Code","text",a.code,{hint:code?"Codes cannot change.":"e.g. 6610"}),field("g-n","Name","text",a.name),field("g-t","Type","select",a.type,{options:GL_TYPES,blank:false}),field("g-s","Detail type","text",a.subtype,{ph:"e.g. Bank, Overhead, Fixed asset"}),
+    field("g-b","Linked bank or wallet","select",a.bank_account_id,{options:Object.values(S.accounts).map(x=>[x.id,x.name]),blank:"None"}),field("g-d","Description","text",a.description,{full:true}),
+    h("label",{class:"row",style:"grid-column:1/-1;gap:8px;font-weight:600"},h("input",{id:"g-a",type:"checkbox",checked:a.active?true:null,disabled:a.system?true:null}),"Active"+(a.system?" (system account)":""))),
+    [saveBtn("Save account",()=>{const c=code||val("g-c");if(!/^\d{3,6}$/.test(c)){toast("Use a numeric code of 3 to 6 digits.");return false}if(!val("g-n")){toast("Name the account.");return false}
+      const row={name:val("g-n"),type:val("g-t"),subtype:val("g-s"),bank_account_id:val("g-b")||null,description:val("g-d"),active:document.getElementById("g-a").checked};
+      if(code){document.getElementById("g-c").disabled=true;return run(()=>sb.from("gl_accounts").update(row).eq("code",code),"Account saved",["gl_accounts"])}
+      return run(()=>sb.from("gl_accounts").insert(Object.assign({code:c},row)),"Account added",["gl_accounts"])})]);if(code)document.getElementById("g-c").disabled=true}
+function editMap(){const opts=Object.values(S.gl).filter(a=>a.active&&a.type==="Expense").sort((a,b)=>a.code.localeCompare(b.code)).map(a=>[a.code,a.code+" "+a.name]);
+  openDlg("Category mapping",h("div",{class:"fg"},h("p",{class:"small muted",style:"grid-column:1/-1;margin:0"},"Which expense account each workplan category posts to. Changes apply to payments approved from now on."),
+    CATS.map((c,i)=>field("m-"+i,c,"select",S.glmap[c],{options:opts,blank:false,full:true}))),
+    [saveBtn("Save mapping",async()=>{for(let i=0;i<CATS.length;i++){const v=val("m-"+i);if(v&&v!==S.glmap[CATS[i]]){const r=await run(()=>sb.from("gl_category_map").upsert({category:CATS[i],account_code:v}),null,["gl_category_map"]);if(!r)return false}}toast("Mapping saved")})])}
+function setLock(){const l=(S.settings||{}).lock_date;openDlg("Lock the books",h("div",{class:"fg"},h("p",{class:"small muted",style:"grid-column:1/-1;margin:0"},"Nothing dated on or before the lock date can be posted, approved or reversed. Lock each month once it is reconciled and reviewed."),
+  field("lk-d","Lock up to and including","date",l||"",{full:true,hint:"Clear the date to unlock."})),[saveBtn("Save lock date",()=>run(()=>sb.rpc("set_lock_date",{p_date:val("lk-d")||null}),val("lk-d")?"Books locked to "+fmtDate(val("lk-d")):"Books unlocked",["settings"]))])}
+function csvDownload(name,rows){const esc=v=>{v=v==null?"":String(v);return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v};
+  const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([rows.map(r=>r.map(esc).join(",")).join("\n")],{type:"text/csv"}));a.download="tusome-"+name+".csv";document.body.append(a);a.click();a.remove()}
 
 /* ============ request sheet ============ */
 function renderSheet(){const root=$("#sheetRoot");if(!sheetFor){root.replaceChildren();return}
