@@ -5,6 +5,7 @@
 
 /* ============ constants ============ */
 const CATS = ["Operations & Essential Costs","Training","M&E, Reporting, and Legal Support","Product Development & Tech Improvements","Marketing & User Acquisition","Safeguarding, Gender, & Compliance"];
+const PAY_KINDS = ["Expense","Advance","Subscription","Bank charge","Other"];
 const KINDS = ["Goods","Service","Consultant / individual contractor","Software / subscription","Event, travel or logistics"];
 const FISCAL = ["Not checked","Verified","Exception approved","None"];
 const EVIDENCE = ["Complete","Partially Supported","Missing Evidence","Amount Mismatch","Date Mismatch","Duplicate","Requires Clarification","Not Applicable"];
@@ -13,18 +14,18 @@ const CON_TYPES = ["Supply of goods","Service","Consultancy","Software / subscri
 const CON_STATUS = ["Draft","Active","Completed","Expired","Terminated"];
 const ACC_TYPES = ["Bank account","Mobile-money wallet","Payment gateway","Petty cash","Card"];
 const ACC_STATUS = ["Active","Dormant","Closed","To confirm","Personal account used for company payments"];
-const ROLES = ["admin","director","approver","custodian","staff","auditor"];
-const ROLE_NAME = {admin:"Administrator",director:"Director",approver:"Band 1–2 approver",custodian:"Finance custodian",staff:"Staff",auditor:"Auditor (read-only)"};
+const ROLES = ["admin","director","alt_director","approver","custodian","staff","auditor"];
+const ROLE_NAME = {admin:"Administrator",director:"Director",alt_director:"Alternate for the Director's own items",approver:"Band 1–2 approver",custodian:"Finance custodian",staff:"Staff",auditor:"Auditor (read-only)"};
 const STEP_ROLE = {ID:"approver", DIR:"director"};
 const STEP_NAME = {ID:"Band 1–2 approver (Independent Director)", DIR:"Director"};
-const VIEWS = [["today","Today"],["requests","Purchase requests"],["expenses","Expenses & claims"],["owed","Who we owe"],["envelopes","Envelopes"],["bank","Bank & reconciliation"],["suppliers","Suppliers"],["contracts","Contracts"],["exceptions","Exceptions"],["audit","Audit trail"],["setup","Rules & roles"],["people","People & logins"]];
-const TABS = [["today","Today","M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"],["requests","Requests","M6 3h9l4 4v14H6zM14 3v5h5M9 13h7M9 17h7"],["expenses","Expenses","M4 7h16v11H4zM4 10h16M8 15h3"],["owed","Owed","M12 3v18M17 7H9.5a3 3 0 0 0 0 6h5a3 3 0 0 1 0 6H6"],["more","More","M4 6h16M4 12h16M4 18h16"]];
+const VIEWS = [["today","Today"],["payments","Payments"],["spending","Spending overview"],["owed","Who we owe"],["requests","Purchase requests"],["envelopes","Envelopes"],["bank","Bank & reconciliation"],["suppliers","Suppliers"],["contracts","Contracts"],["exceptions","Exceptions"],["audit","Audit trail"],["setup","Rules & roles"],["people","People & logins"]];
+const TABS = [["today","Today","M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"],["payments","Payments","M4 7h16v11H4zM4 10h16M8 15h3"],["spending","Spending","M5 20V11M12 20V5M19 20v-7"],["owed","Owed","M12 3v18M17 7H9.5a3 3 0 0 0 0 6h5a3 3 0 0 1 0 6H6"],["more","More","M4 6h16M4 12h16M4 18h16"]];
 
 /* ============ state ============ */
 let sb = null;
 const S = {session:null,email:null,member:null,settings:null,members:{},requests:{},suppliers:{},contracts:{},accounts:{},approvals:{},audit:[],
-  envelopes:{},claims:{},reimbursements:{},reconciliations:{},loaded:false};
-let view="today", tab="all", ctab="mine", q="", af="", sheetFor=null;
+  envelopes:{},claims:{},payments:{},reimbursements:{},reconciliations:{},loaded:false};
+let view="today", tab="all", ptab="all", q="", pq="", af="", sheetFor=null, month=new Date().toISOString().slice(0,7);
 
 /* ============ helpers ============ */
 const $=s=>document.querySelector(s);
@@ -39,13 +40,13 @@ function fmtTime(d){const x=new Date(d);return isNaN(x)?"":x.toLocaleString("en-
 const daysSince=d=>d?Math.floor((new Date(today()+"T00:00:00")-new Date(String(d).slice(0,10)+"T00:00:00"))/864e5):null;
 function pill(text,cls){return h("span",{class:"pill "+cls},text)}
 function toast(m){const t=$("#toast");t.textContent=m;t.classList.add("show");clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove("show"),3400)}
-function nameOf(key){if(!key)return "—";const m=S.members[key];if(m&&m.full_name)return m.full_name;const c=Object.values(S.claims).find(x=>x.claimant===key&&x.claimant_name);if(c)return c.claimant_name;return String(key).replace(/^name:/,"")}
+function nameOf(key){if(!key)return "—";const m=S.members[key];if(m&&m.full_name)return m.full_name;const NAMES={"name:frank":"Frank","name:ibrahim":"Ibrahim","name:issa":"Issa","name:amriyyah":"Amriyyah"};if(NAMES[key])return NAMES[key];return String(key).replace(/^name:/,"")}
 const myRoles=()=>(S.member&&S.member.active?S.member.roles:[])||[];
 const hasRole=r=>myRoles().includes(r);
 const hasAny=rs=>rs.some(hasRole);
 const canWrite=()=>myRoles().some(r=>r!=="auditor");
 const isAdmin=()=>hasRole("admin");
-const seesAllClaims=()=>hasAny(["approver","director","admin","custodian","auditor"]);
+const seesAllClaims=()=>hasAny(["approver","director","alt_director","admin","custodian","auditor"]);
 const canReconcile=()=>hasAny(["admin","custodian"]);
 function emailsWithRole(r){return Object.values(S.members).filter(m=>m.active&&(m.roles||[]).includes(r)).map(m=>m.email)}
 /* Responsive table: columns [{l:label, num, primary, mono}], rows of cells. On phones each row becomes a card. */
@@ -66,16 +67,16 @@ const prePolicy=r=>(r.date||"")<cfg().policyDate;
 function quotesState(r){if(prePolicy(r))return"Pre-policy";const need=band(r);return((r.quotes||[]).length>=need||!!r.waiver)?"OK":"Short"}
 const apprKey=(id,rev,step)=>id+"__"+rev+"__"+step;
 const decisionFor=(r,step)=>S.approvals[apprKey(r.id,r.rev,step)]||null;
-function chainState(r){let blocked=false;return stepsFor(r).map(step=>{const d=decisionFor(r,step);let s="pending";if(d)s=d.decision==="Approved"?"done":"rej";else if(!blocked&&r.submitted)s="now";if(s!=="done")blocked=true;return{step,dec:d,s}})}
+function chainState(r){if(r.envelopeCovered)return stepsFor(r).map(step=>({step,dec:null,s:"done",env:true}));let blocked=false;return stepsFor(r).map(step=>{const d=decisionFor(r,step);let s="pending";if(d)s=d.decision==="Approved"?"done":"rej";else if(!blocked&&r.submitted)s="now";if(s!=="done")blocked=true;return{step,dec:d,s}})}
 const approvedAll=r=>chainState(r).every(x=>x.s==="done");
 const rejected=r=>chainState(r).some(x=>x.s==="rej");
 function status(r){
   if(!r.submitted)return{k:"draft",t:"Draft",c:"p-mute"};
   if(rejected(r))return{k:"rejected",t:"Rejected",c:"p-bad"};
-  if(!approvedAll(r)){if(r.payment)return{k:"paid",t:"Paid without approval",c:"p-bad"};return{k:"approval",t:"Awaiting approval",c:"p-warn"}}
+  if(!approvedAll(r)){if(r.payment||reqPayments(r).length)return{k:"paid",t:"Paid without approval",c:"p-bad"};return{k:"approval",t:"Awaiting approval",c:"p-warn"}}
   if(!r.delivery)return{k:"approved",t:"Approved · awaiting delivery",c:"p-info"};
   if(!r.invoice)return{k:"approved",t:"Delivered · awaiting invoice",c:"p-info"};
-  if(!r.payment)return{k:"payment",t:"Awaiting payment",c:"p-brand"};
+  if(!r.payment&&!reqPayments(r).length)return{k:"payment",t:"Awaiting payment",c:"p-brand"};
   return{k:"paid",t:"Paid",c:"p-ok"}}
 function supplierVerified(s){return !!(s&&s.tin&&["Yes","No"].includes(s.efd)&&s.callback==="Yes"&&s.verifiedBy&&["None declared","Declared"].includes(s.coi)&&s.f07)}
 function splitFlag(r){if(!r.supplierId||!r.date)return null;const w=cfg().splitDays*864e5,d0=new Date(r.date);let t=0;
@@ -97,16 +98,24 @@ function invoicedFor(cid){let t=0;Object.values(S.requests).forEach(r=>{if(r.con
 /* envelopes */
 function envelopeUse(e){let req=0,cl=0;const items=[];
   Object.values(S.requests).forEach(r=>{if(r.envelopeId===e.id&&r.submitted&&!rejected(r)){const v=toTzs(r.amount,r.currency,r.date)||0;req+=v;items.push(["Request",r.id,r.title,v])}});
-  Object.values(S.claims).forEach(c=>{if(c.envelope_id===e.id&&["Submitted","Approved","Reimbursed"].includes(c.status)){const v=toTzs(c.amount,c.currency,c.date)||0;cl+=v;items.push(["Claim",c.id,c.description,v])}});
+  Object.values(S.payments).forEach(p=>{if(p.envelope_id===e.id&&!p.request_id&&p.status!=="Rejected"){const v=toTzs(p.amount,p.currency,p.date)||0;cl+=v;items.push(["Payment",p.id,p.description,v])}});
   const budget=e.currency==="USD"?toTzs(e.amount,"USD",today()):n0(e.amount);return{req,cl,used:req+cl,budget,left:(budget||0)-(req+cl),items}}
-/* claims */
-function claimNeedsDirector(c){const a=amounts(c);const claimantDir=((S.members[c.claimant]||{}).roles||[]).includes("director");return a.usd!=null&&a.usd>cfg().thresholdUsd&&!claimantDir}
-function canDecideClaim(c){if(c.status!=="Submitted"||c.claimant===S.email)return false;return claimNeedsDirector(c)?hasRole("director"):hasAny(["approver","director"])}
-const CLAIM_PILL={Draft:"p-mute",Submitted:"p-warn",Approved:"p-brand",Rejected:"p-bad",Reimbursed:"p-ok"};
-function owedByPerson(){const m={};Object.values(S.claims).forEach(c=>{const p=m[c.claimant]=m[c.claimant]||{who:c.claimant,owed:{},pending:{},paid:{},claims:[]};
-  p.claims.push(c);const bucket=c.status==="Approved"?p.owed:c.status==="Submitted"?p.pending:c.status==="Reimbursed"?p.paid:null;if(bucket)bucket[c.currency]=(bucket[c.currency]||0)+n0(c.amount)});return Object.values(m)}
+/* payments */
+const isDirector=e=>((S.members[e]||{}).roles||[]).includes("director");
+function payNeedsDirector(p){const a=amounts(p);return a.usd!=null&&a.usd>cfg().thresholdUsd}
+function canDecidePayment(p){if(p.status!=="Submitted"||p.payer===S.email||p.recorded_by===S.email)return false;
+  if(payNeedsDirector(p))return (isDirector(p.payer)||isDirector(p.recorded_by))?hasAny(["alt_director","director"]):hasRole("director");return hasAny(["approver","director","alt_director"])}
+const PAY_PILL={Submitted:"p-warn",Approved:"p-ok",Rejected:"p-bad"};
+const PAY_LABEL={Submitted:"Awaiting approval",Approved:"Approved",Rejected:"Rejected"};
+function paidFrom(p){return p.funding==="Personal"?"Personal · "+nameOf(p.payer):((S.accounts[p.account_id]||{}).name||"Company")}
+function owedByPerson(){const m={};const get=k=>m[k]=m[k]||{who:k,owed:{},pending:{},paid:{},items:[]};
+  Object.values(S.payments).forEach(p=>{if(p.funding!=="Personal"||!p.payer||p.imported)return;const o=get(p.payer);o.items.push(p);
+    if(p.status==="Approved")o.owed[p.currency]=(o.owed[p.currency]||0)+n0(p.amount);else if(p.status==="Submitted")o.pending[p.currency]=(o.pending[p.currency]||0)+n0(p.amount)});
+  Object.values(S.reimbursements).forEach(r=>{const o=get(r.claimant);o.owed[r.currency]=(o.owed[r.currency]||0)-n0(r.amount);o.paid[r.currency]=(o.paid[r.currency]||0)+n0(r.amount)});
+  Object.values(m).forEach(o=>Object.keys(o.owed).forEach(c=>{if(Math.abs(o.owed[c])<0.005)delete o.owed[c]}));return Object.values(m)}
 const fmtByCur=o=>Object.keys(o).length?Object.entries(o).map(([c,v])=>money(v,c)).join(" + "):"—";
 function toTzsSum(o){return Object.entries(o).reduce((t,[c,v])=>t+(toTzs(v,c,today())||0),0)}
+const reqPayments=r=>Object.values(S.payments).filter(p=>p.request_id===r.id&&p.status!=="Rejected");
 /* bank */
 function latestRecon(accId){return Object.values(S.reconciliations).filter(r=>r.account_id===accId).sort((a,b)=>(b.as_of+b.prepared_at).localeCompare(a.as_of+a.prepared_at))[0]||null}
 function reconState(r){if(!r)return{t:"Not reconciled",c:"p-warn"};if(!r.reviewed_by)return{t:"Awaiting sign-off",c:"p-warn"};if(Math.abs(n0(r.difference))>0.005)return{t:"Signed off with difference",c:"p-info"};return{t:"Reconciled",c:"p-ok"}}
@@ -120,15 +129,17 @@ function allExceptions(){const out=[];
     if(!r)out.push({k:"Account not reconciled",d:a.name+": no reconciliation recorded",ref:a.id,who:"—",amt:null,go:()=>go("bank")});
     else if(daysSince(r.as_of)>35)out.push({k:"Reconciliation overdue",d:a.name+": last reconciled "+fmtDate(r.as_of),ref:a.id,who:"—",amt:null,go:()=>go("bank")});
     else if(!r.reviewed_by)out.push({k:"Reconciliation awaiting sign-off",d:a.name+" as of "+fmtDate(r.as_of)+", prepared by "+nameOf(r.prepared_by),ref:r.id,who:"—",amt:null,go:()=>go("bank")});});
+  Object.values(S.payments).forEach(p=>{if(p.status==="Submitted"&&daysSince(p.recorded_at||p.date)>7)out.push({k:"Payment waiting over 7 days",d:p.description+" · "+paidFrom(p),ref:p.id,who:p.payee||"—",amt:toTzs(p.amount,p.currency,p.date),go:()=>showPayment(p.id)});
+    if(p.funding==="Company"&&p.status==="Approved"&&!p.imported&&p.fiscal!=="Verified"&&p.fiscal!=="Exception approved"&&p.kind!=="Bank charge")out.push({k:"Fiscal receipt not verified",d:p.description+" · "+(p.fiscal||"Not checked"),ref:p.id,who:p.payee||"—",amt:toTzs(p.amount,p.currency,p.date),go:()=>showPayment(p.id)})});
   const fx=fxFor(today());if(!fx||fx.status==="Placeholder")out.push({k:"FX rate not confirmed",d:"Add the current Bank of Tanzania rate",ref:"Rules",who:"—",amt:null,go:()=>go("setup")});
   if(!emailsWithRole("approver").length||!emailsWithRole("director").length)out.push({k:"Approvers not assigned",d:"Give at least one person the approver role and one the director role",ref:"People",who:"—",amt:null,go:()=>go("people")});
   return out}
 function myPending(){const me=S.email;return Object.values(S.requests).filter(r=>{if(!r.submitted||rejected(r)||r.requester===me)return false;const now=chainState(r).find(x=>x.s==="now");return now&&hasRole(STEP_ROLE[now.step])})}
-const myClaimDecisions=()=>Object.values(S.claims).filter(canDecideClaim);
+const myClaimDecisions=()=>Object.values(S.payments).filter(canDecidePayment);
 
 /* ============ data ============ */
 function rowToRequest(x){return Object.assign({},x.details||{},{id:x.id,requester:x.requester_email,date:x.date,supplierId:x.supplier_id,amount:n0(x.amount),currency:x.currency,submitted:x.submitted,submittedAt:x.submitted_at,rev:x.rev,retro:x.retro,_details:x.details||{}})}
-const ROW_TABLES=["envelopes","claims","reimbursements","reconciliations"];
+const ROW_TABLES=["envelopes","payments","reimbursements","reconciliations"];
 async function loadTable(name){
   if(name==="settings"){const{data,error}=await sb.from("settings").select("*").eq("id",1).maybeSingle();if(!error)S.settings=data;return}
   if(name==="members"){const{data,error}=await sb.from("members").select("*");if(error){S.loadError=error.message||String(error);console.error(error);return}S.loadError=null;S.members={};data.forEach(m=>S.members[m.email]=m);S.member=S.members[S.email]||null;return}
@@ -143,7 +154,7 @@ let refreshTimer=null;const pending=new Set();
 function scheduleRefresh(t){pending.add(t);pending.add("audit_log");clearTimeout(refreshTimer);refreshTimer=setTimeout(async()=>{const list=[...pending];pending.clear();await Promise.all(list.map(loadTable));render()},250)}
 function subscribe(){sb.channel("live").on("postgres_changes",{event:"*",schema:"public"},p=>scheduleRefresh(p.table)).subscribe()}
 async function run(fn,okMsg,tables){try{const res=await fn();if(res&&res.error)throw res.error;if(okMsg)toast(okMsg);(tables||[]).forEach(scheduleRefresh);return res||true}catch(e){console.error(e);toast(friendly(e));return false}}
-function friendly(e){const m=(e&&(e.message||e.error_description))||"";if(/row-level security|permission denied/i.test(m))return "You do not have permission to do that.";if(/relation .* does not exist|Could not find the table/i.test(m))return "The database needs the latest update (run supabase/004_expenses_envelopes_bank.sql).";return m||"Could not save. Try again."}
+function friendly(e){const m=(e&&(e.message||e.error_description))||"";if(/row-level security|permission denied/i.test(m))return "You do not have permission to do that.";if(/relation .* does not exist|Could not find the table/i.test(m))return "The database needs the latest update (run supabase/005_payments_ledger.sql).";return m||"Could not save. Try again."}
 async function saveRequestDetails(r,patch,msg){const details=Object.assign({},r._details,patch);return run(()=>sb.from("requests").update({details}).eq("id",r.id),msg,["requests"])}
 
 /* ============ auth ============ */
@@ -180,7 +191,7 @@ const openRequest=id=>{location.hash="r-"+id};
 function closeSheet(){sheetFor=null;if(location.hash.startsWith("#r-"))history.replaceState(null,"","#"+view);render()}
 const visibleViews=()=>VIEWS.filter(([k])=>k!=="people"||isAdmin());
 function badgeFor(k){const cd=myClaimDecisions().length;if(k==="today"){const n=myPending().length+cd;return n?h("span",{class:"count"},n):null}
-  if(k==="exceptions"){const n=allExceptions().length;return n?h("span",{class:"count bad"},n):null}if(k==="expenses"&&cd)return h("span",{class:"count"},cd);return null}
+  if(k==="exceptions"){const n=allExceptions().length;return n?h("span",{class:"count bad"},n):null}if(k==="payments"&&cd)return h("span",{class:"count"},cd);return null}
 function renderNav(){
   $("#nav").replaceChildren(...visibleViews().map(([k,l])=>h("a",{href:"#"+k,"aria-current":view===k&&!sheetFor?"page":null},h("span",null,l),badgeFor(k))));
   $("#who").replaceChildren(h("b",null,(S.member&&S.member.full_name)||S.email),S.email,h("div",null,myRoles().filter(r=>r!=="staff").map(r=>ROLE_NAME[r]).join(" · ")||"Staff"),
@@ -195,9 +206,9 @@ function openMenu(){openDlg("Menu",h("div",{class:"menu-list"},
 
 /* ============ views ============ */
 function render(){if(!S.member)return;renderNav();const parts=[];
-  if(S.missing004)parts.push(h("div",{class:"banner"},h("b",null,"Database update needed. "),"Expenses, envelopes and reconciliations need supabase/004_expenses_envelopes_bank.sql to be run in Supabase."));
+  if(S.missing004)parts.push(h("div",{class:"banner"},h("b",null,"Database update needed. "),"Payments, envelopes and reconciliations need supabase/004 and 005 to be run in Supabase."));
   if(!canWrite())parts.push(h("div",{class:"banner info"},h("b",null,"Read-only access. "),"You can view every record and the audit trail."));
-  const fn={today:vToday,requests:vRequests,expenses:vExpenses,owed:vOwed,envelopes:vEnvelopes,bank:vBank,suppliers:vSuppliers,contracts:vContracts,exceptions:vExceptions,audit:vAudit,setup:vSetup,people:vPeople}[view]||vToday;
+  const fn={today:vToday,requests:vRequests,payments:vPayments,spending:vSpending,owed:vOwed,envelopes:vEnvelopes,bank:vBank,suppliers:vSuppliers,contracts:vContracts,exceptions:vExceptions,audit:vAudit,setup:vSetup,people:vPeople}[view]||vToday;
   parts.push(...[].concat(fn()));$("#view").replaceChildren(...parts);renderSheet()}
 function header(title,sub,...actions){const a=actions.filter(Boolean);return h("div",{class:"head"},h("div",null,h("h1",null,title),sub?h("p",{class:"sub"},sub):null),a.length?h("div",{class:"row"},...a):null)}
 function newBtn(label,fn,ok){return (ok===undefined?canWrite():ok)?h("button",{class:"btn primary",onclick:fn},label):null}
@@ -208,17 +219,17 @@ function vToday(){const reqs=Object.values(S.requests),pend=myPending(),cd=myCla
   const mine=reqs.filter(r=>r.requester===me&&!["paid","rejected"].includes(status(r).k));
   const toPay=reqs.filter(r=>status(r).k==="payment");
   const myOwed=owedByPerson().find(p=>p.who===me);const exc=allExceptions(),fx=fxFor(today());const first=((S.member&&S.member.full_name)||"").split(" ")[0];
-  return [header("Habari"+(first?", "+first:""),"What needs your attention today.",newBtn("New request",()=>editRequest()),newBtn("New expense",()=>editClaim())),
+  return [header("Habari"+(first?", "+first:""),"What needs your attention today.",newBtn("Record a payment",()=>editPayment()),newBtn("New purchase request",()=>editRequest())),
     h("div",{class:"tiles"},tile(pend.length+cd.length,"Waiting for your approval"),tile(toPay.length,"Approved, awaiting payment",()=>{tab="payment";go("requests")}),
-      tile(fmtByCur(myOwed?myOwed.owed:{}),"TUSOME owes you",()=>go("owed")),tile(fmtByCur(cashPosition()),"Cash per latest statements",()=>go("bank")),
+      tile(fmtByCur(myOwed?myOwed.owed:{}),"TUSOME owes you",()=>go("owed")),tile(tzs(spendRows(new Date().toISOString().slice(0,7)).reduce((t,p)=>t+(toTzs(p.amount,p.currency,p.date)||0),0)),"Spent this month",()=>{month=new Date().toISOString().slice(0,7);go("spending")}),tile(fmtByCur(cashPosition()),"Cash per latest statements",()=>go("bank")),
       tile(exc.length,"Open exceptions",()=>go("exceptions")),tile(fx?Number(fx.rate).toLocaleString("en-GB",{maximumFractionDigits:2}):"—","TZS per USD"+(fx?" · "+fmtDate(fx.date):""))),
     h("div",{class:"grid2"},h("section",{class:"panel"},h("div",{class:"ph"},h("h2",null,"Your approvals")),
-        (pend.length||cd.length)?h("div",{class:"list"},reqItems(pend),claimItems(cd)):empty("Nothing waiting for you. Requests and expense claims appear here when it is your turn.")),
+        (pend.length||cd.length)?h("div",{class:"list"},reqItems(pend),claimItems(cd)):empty("Nothing waiting for you. Requests and payments appear here when it is your turn.")),
       h("section",{class:"panel"},h("div",{class:"ph"},h("h2",null,"Your open requests")),mine.length?h("div",{class:"list"},reqItems(mine)):empty("You have no open requests."))),
     h("section",{class:"panel"},h("div",{class:"ph"},h("h2",null,"Exceptions"),h("a",{href:"#exceptions",class:"small"},"View all")),excTable(exc.slice(0,6)))]}
 function reqItems(arr){return arr.map(r=>{const s=status(r);return h("button",{class:"li",onclick:()=>openRequest(r.id)},h("div",{style:"min-width:0"},h("div",{class:"t"},r.title||"Untitled"),h("div",{class:"small muted"},r.id+" · "+((S.suppliers[r.supplierId]||{}).name||"No supplier")+" · "+nameOf(r.requester)),trail(r)),h("div",{style:"text-align:right"},h("div",{class:"num",style:"font-weight:700"},money(r.amount,r.currency)),pill(s.t,s.c)))})}
-function claimItems(arr){return arr.map(c=>h("button",{class:"li",onclick:()=>showClaim(c.id)},h("div",{style:"min-width:0"},h("div",{class:"t"},c.description),h("div",{class:"small muted"},c.id+" · expense claim · "+nameOf(c.claimant))),h("div",{style:"text-align:right"},h("div",{class:"num",style:"font-weight:700"},money(c.amount,c.currency)),pill(c.status,CLAIM_PILL[c.status]))))}
-function trail(r){const ok=r.invoice&&["Verified","Exception approved"].includes(r.invoice.fiscal);const parts=[{s:r.submitted?"done":"now"},...chainState(r).map(x=>({s:x.s==="done"?"done":x.s==="rej"?"gap":x.s==="now"?"now":""})),{s:r.delivery?"done":""},{s:r.invoice?(ok?"done":"gap"):""},{s:r.payment?(approvedAll(r)?"done":"gap"):""}];
+function claimItems(arr){return arr.map(p=>h("button",{class:"li",onclick:()=>showPayment(p.id)},h("div",{style:"min-width:0"},h("div",{class:"t"},p.description),h("div",{class:"small muted"},p.id+" · payment · "+paidFrom(p))),h("div",{style:"text-align:right"},h("div",{class:"num",style:"font-weight:700"},money(p.amount,p.currency)),pill(PAY_LABEL[p.status],PAY_PILL[p.status]))))}
+function trail(r){const ok=r.invoice&&["Verified","Exception approved"].includes(r.invoice.fiscal);const parts=[{s:r.submitted?"done":"now"},...chainState(r).map(x=>({s:x.s==="done"?"done":x.s==="rej"?"gap":x.s==="now"?"now":""})),{s:r.delivery?"done":""},{s:r.invoice?(ok?"done":"gap"):""},{s:(r.payment||reqPayments(r).length)?(approvedAll(r)?"done":"gap"):""}];
   return h("div",{class:"trail","aria-hidden":"true"},parts.map(p=>h("span",{class:p.s})))}
 
 function searchBox(id,valNow,set,ph){return h("input",{id,type:"search",placeholder:ph,value:valNow,"aria-label":ph,oninput:e=>{set(e.target.value);const p=e.target.selectionStart;render();const el=document.getElementById(id);el.focus();el.setSelectionRange(p,p)}})}
@@ -234,78 +245,154 @@ function vRequests(){const reqs=Object.values(S.requests).sort((a,b)=>(b.date||"
         rows.map(r=>{const s=status(r),ck=checks(r);return [h("div",null,h("div",{style:"font-weight:600"},r.title||"Untitled"),h("div",{class:"small muted"},r.project||""),trail(r)),r.id,fmtDate(r.date),(S.suppliers[r.supplierId]||{}).name||"—",nameOf(r.requester),"Band "+band(r),money(r.amount,r.currency),
           h("span",null,pill(s.t,s.c),ck.length?h("span",{class:"small",style:"color:var(--bad);margin-left:6px"},ck.length+" issue"+(ck.length>1?"s":"")):null)]}),i=>()=>openRequest(rows[i].id)))]}
 
-/* ---- expenses & claims ---- */
-function vExpenses(){const all=Object.values(S.claims).filter(c=>!c.opening).sort((a,b)=>(b.date||"").localeCompare(a.date||"")||(b.id>a.id?1:-1));
-  const groups=[["mine","My claims"]];if(hasAny(["approver","director"]))groups.push(["decide","To approve"]);if(seesAllClaims())groups.push(["all","All claims"]);
-  if(!groups.some(g=>g[0]===ctab))ctab="mine";
-  const pick=k=>k==="mine"?all.filter(c=>c.claimant===S.email):k==="decide"?all.filter(canDecideClaim):all;const rows=pick(ctab);
-  return [header("Expenses & claims","Spent your own money on TUSOME work? Log it here with the receipt. Once approved, it is added to what TUSOME owes you until it is reimbursed.",newBtn("New expense",()=>editClaim())),
-    h("section",{class:"panel"},h("div",{class:"tabs",role:"tablist"},groups.map(([k,l])=>h("button",{role:"tab","aria-selected":ctab===k?"true":"false",onclick:()=>{ctab=k;render()}},l,h("span",{class:"n"},pick(k).length)))),
-      !rows.length?empty(ctab==="decide"?"No claims waiting for your decision.":"No expense claims yet. Select “New expense” to log one."):
-      T([{l:"Description",primary:true},{l:"Number",mono:true},{l:"Date"},{l:"Claimant"},{l:"Envelope"},{l:"Amount",num:true},{l:"Status"}],
-        rows.map(c=>[h("div",null,h("div",{style:"font-weight:600"},c.description),h("div",{class:"small muted"},[c.payee,c.project].filter(Boolean).join(" · "))),c.id,fmtDate(c.date),nameOf(c.claimant),(S.envelopes[c.envelope_id]||{}).name||"—",money(c.amount,c.currency),pill(c.status,CLAIM_PILL[c.status])]),i=>()=>showClaim(rows[i].id)))]}
-function showClaim(id){const c=S.claims[id];if(!c)return;const mine=c.claimant===S.email;const acts=[];
-  if(mine&&["Draft","Rejected"].includes(c.status)){acts.push(h("button",{class:"btn",onclick:()=>{dlg.close();editClaim(c.id)}},"Edit"));
-    acts.push(h("button",{class:"btn primary",onclick:async()=>{if(!c.receipt_link){toast("Add the receipt link first (Edit).");return}if(await run(()=>sb.from("claims").update({status:"Submitted"}).eq("id",c.id),"Submitted for approval",["claims"]))dlg.close()}},"Submit for approval"))}
-  if(mine&&c.status==="Draft")acts.push(h("button",{class:"btn danger",onclick:async()=>{if(await run(()=>sb.from("claims").delete().eq("id",c.id),"Draft deleted",["claims"]))dlg.close()}},"Delete draft"));
-  if(canDecideClaim(c)){acts.push(h("button",{class:"btn ok",onclick:()=>decideClaim(c,"Approved")},"Approve"));acts.push(h("button",{class:"btn danger",onclick:()=>decideClaim(c,"Rejected")},"Reject"))}
-  const reimb=c.reimbursement_id&&S.reimbursements[c.reimbursement_id];const a=amounts(c);
-  openDlg(c.id+" · "+c.status,h("div",{style:"display:grid;gap:14px"},
-    claimNeedsDirector(c)&&c.status==="Submitted"?h("div",{class:"banner info"},"Above USD "+cfg().thresholdUsd.toLocaleString("en-GB")+": the Director decides this claim."):null,
-    h("dl",null,h("dt",null,"Claimant"),h("dd",null,nameOf(c.claimant)),h("dt",null,"Date"),h("dd",null,fmtDate(c.date)),h("dt",null,"What"),h("dd",null,c.description),h("dt",null,"Paid to"),h("dd",null,c.payee||"—"),
-      h("dt",null,"Amount"),h("dd",null,money(c.amount,c.currency)+(c.currency==="USD"&&a.tzs?" · "+tzs(a.tzs):"")),h("dt",null,"Paid from"),h("dd",null,c.paid_from||"—"),
-      h("dt",null,"Project"),h("dd",null,c.project||"—"),h("dt",null,"Category"),h("dd",null,c.category||"—"),h("dt",null,"Envelope"),h("dd",null,(S.envelopes[c.envelope_id]||{}).name||"—"),
-      h("dt",null,"Receipt"),h("dd",null,c.receipt_link?h("a",{href:c.receipt_link,target:"_blank",rel:"noopener"},"Open receipt"):"—"),
-      h("dt",null,"Decision"),h("dd",null,c.decided_by?c.status+" by "+nameOf(c.decided_by)+(c.decided_at?" on "+fmtTime(c.decided_at):"")+(c.decision_comment?" · “"+c.decision_comment+"”":""):"—"),
-      h("dt",null,"Reimbursed"),h("dd",null,reimb?money(reimb.amount,reimb.currency)+" on "+fmtDate(reimb.date)+" · tracker "+reimb.tracker_id+" ("+reimb.id+")":"—"),
-      c.notes?[h("dt",null,"Notes"),h("dd",null,c.notes)]:null)),acts)}
-function editClaim(id){if(!canWrite())return;const c=id?S.claims[id]:{date:today(),currency:"TZS"};
-  const envs=Object.values(S.envelopes).filter(e=>e.status==="Active"||e.id===c.envelope_id).map(e=>[e.id,e.name+(e.project?" · "+e.project:"")]);
-  const body=h("div",{class:"fg"},field("c-desc","What was it for?","text",c.description,{full:true,ph:"e.g. Fuel for Zanzibar field visit"}),field("c-payee","Paid to","text",c.payee,{ph:"Shop, supplier or person"}),field("c-date","Date paid","date",c.date),
-    field("c-amt","Amount","number",c.amount),field("c-cur","Currency","select",c.currency,{options:["TZS","USD"],blank:false}),field("c-from","Paid from (your account)","text",c.paid_from,{ph:"e.g. my Selcom Pesa, my card"}),
-    field("c-proj","Project / client","text",c.project),field("c-cat","Workplan category","select",c.category,{options:CATS}),field("c-env","Envelope (budget)","select",c.envelope_id,{options:envs,blank:"None"}),
-    field("c-rec","Link to receipt or proof of payment","url",c.receipt_link,{full:true,hint:"Required before submitting. A Google Drive link to the photo or PDF works."}),field("c-notes","Notes","textarea",c.notes,{full:true}));
-  const collect=()=>{const amt=n0(val("c-amt"));const desc=val("c-desc");if(!desc||!(amt>0)){toast("Add what it was for and the amount.");return null}
-    return{description:desc,payee:val("c-payee"),date:val("c-date")||today(),amount:amt,currency:val("c-cur"),paid_from:val("c-from"),project:val("c-proj"),category:val("c-cat")||null,envelope_id:val("c-env")||null,receipt_link:val("c-rec"),notes:val("c-notes")}};
-  const save=async submit=>{const row=collect();if(!row)return false;if(submit&&!row.receipt_link){toast("Add the receipt link before submitting.");return false}
-    if(id){row.status=submit?"Submitted":"Draft";return run(()=>sb.from("claims").update(row).eq("id",id),submit?"Submitted for approval":"Saved",["claims"])}
-    return run(async()=>{const res=await sb.from("claims").insert(Object.assign({id:"new",claimant:S.email},row)).select("id").single();if(res.error||!submit)return res;return sb.from("claims").update({status:"Submitted"}).eq("id",res.data.id)},submit?"Submitted for approval":"Saved as draft",["claims"])};
-  const draftBtn=h("button",{class:"btn",onclick:async()=>{draftBtn.disabled=true;try{if(await save(false))dlg.close()}finally{draftBtn.disabled=false}}},"Save draft");
-  openDlg(id?"Edit "+id:"New expense",body,[draftBtn,saveBtn("Save and submit",()=>save(true))])}
-function decideClaim(c,decision){openDlg((decision==="Approved"?"Approve ":"Reject ")+c.id,h("div",{style:"display:grid;gap:10px"},h("div",{class:"rule"},h("b",null,c.description),nameOf(c.claimant)+" · "+money(c.amount,c.currency)+" · "+fmtDate(c.date)),
-  c.receipt_link?h("a",{href:c.receipt_link,target:"_blank",rel:"noopener"},"Open the receipt before deciding"):null,field("dc-c",decision==="Rejected"?"Reason for rejection (required)":"Comment (optional)","textarea","",{rows:3})),
-  [saveBtn(decision==="Approved"?"Approve":"Reject",async()=>{const cm=val("dc-c");if(decision==="Rejected"&&!cm){toast("Give a reason so the claimant can fix it.");return false}return run(()=>sb.rpc("decide_claim",{p_id:c.id,p_decision:decision,p_comment:cm}),decision,["claims"])})])}
+/* ---- payments (the book of payments) ---- */
+function monthOf(d){return String(d||"").slice(0,7)}
+function vPayments(){const all=Object.values(S.payments).sort((a,b)=>(b.date||"").localeCompare(a.date||"")||(b.id>a.id?1:-1));
+  const groups=[["all","All"],["mine","Mine"],["decide","To approve"],["waiting","Awaiting approval"],["personal","Paid personally"],["company","Company"]];
+  const pick=k=>k==="mine"?all.filter(p=>p.payer===S.email||p.recorded_by===S.email):k==="decide"?all.filter(canDecidePayment):k==="waiting"?all.filter(p=>p.status==="Submitted"):k==="personal"?all.filter(p=>p.funding==="Personal"):k==="company"?all.filter(p=>p.funding==="Company"):all;
+  let rows=pick(ptab);if(pq){const f=pq.toLowerCase();rows=rows.filter(p=>[p.id,p.description,p.payee,p.project,p.category,p.tracker_id,nameOf(p.payer)].join(" ").toLowerCase().includes(f))}
+  return [header("Payments","Every payment TUSOME makes, from a company account or from someone's own pocket. Money paid personally is added to Who we owe once approved.",newBtn("Record a payment",()=>editPayment()),isAdmin()?h("button",{class:"btn",onclick:importTracker},"Import from tracker"):null),
+    h("section",{class:"panel"},h("div",{class:"tabs",role:"tablist"},groups.filter(([k])=>k!=="decide"||hasAny(["approver","director","alt_director"])).map(([k,l])=>h("button",{role:"tab","aria-selected":ptab===k?"true":"false",onclick:()=>{ptab=k;render()}},l,h("span",{class:"n"},pick(k).length)))),
+      h("div",{class:"toolbar"},searchBox("pq",pq,v=>pq=v,"Search what, who, project, tracker ID"),h("span",{class:"small muted"},rows.length+" shown")),
+      !rows.length?empty(all.length?"No payments match.":"No payments yet. Select “Record a payment” to add the first."):
+      T([{l:"What",primary:true},{l:"Date"},{l:"Paid to"},{l:"Paid from"},{l:"Project"},{l:"Amount",num:true},{l:"Status"}],
+        rows.map(p=>[h("div",null,h("div",{style:"font-weight:600"},p.description),h("div",{class:"small muted"},p.id+(p.tracker_id?" · "+p.tracker_id:"")+(p.opening?" · opening balance":""))),fmtDate(p.date),p.payee||"—",paidFrom(p),p.project||"—",money(p.amount,p.currency),pill(PAY_LABEL[p.status],PAY_PILL[p.status])]),i=>()=>showPayment(rows[i].id)))]}
+function showPayment(id){const p=S.payments[id];if(!p)return;const acts=[];const mine=p.recorded_by===S.email;
+  if(mine&&p.status!=="Approved")acts.push(h("button",{class:"btn",onclick:()=>{dlg.close();editPayment(p.id)}},"Edit"));
+  if(p.status==="Approved"&&(mine||hasAny(["admin","custodian"])))acts.push(h("button",{class:"btn",onclick:()=>{dlg.close();paymentEvidence(p)}},"Update evidence"));
+  if(mine&&p.status!=="Approved")acts.push(h("button",{class:"btn danger",onclick:async()=>{if(await run(()=>sb.from("payments").delete().eq("id",p.id),"Deleted",["payments"]))dlg.close()}},"Delete"));
+  if(canDecidePayment(p)){acts.push(h("button",{class:"btn ok",onclick:()=>decidePayment(p,"Approved")},"Approve"));acts.push(h("button",{class:"btn danger",onclick:()=>decidePayment(p,"Rejected")},"Reject"))}
+  const a=amounts(p);const link=u=>u&&/^https?:/.test(u)?h("a",{href:u,target:"_blank",rel:"noopener"},"Open receipt"):(u||"—");
+  openDlg(p.id,h("div",{style:"display:grid;gap:12px"},h("div",{class:"row"},pill(PAY_LABEL[p.status],PAY_PILL[p.status]),h("b",{class:"num"},money(p.amount,p.currency)),p.currency==="USD"&&a.tzs?h("span",{class:"muted small"},"≈ "+tzs(a.tzs)):null),
+    p.status==="Submitted"&&payNeedsDirector(p)?h("div",{class:"banner info"},"Above USD "+cfg().thresholdUsd.toLocaleString("en-GB")+": "+((isDirector(p.payer)||isDirector(p.recorded_by))?"the alternate approver decides the Director's own payments.":"the Director decides.")):null,
+    h("dl",null,h("dt",null,"What"),h("dd",null,p.description),h("dt",null,"Date"),h("dd",null,fmtDate(p.date)),h("dt",null,"Paid to"),h("dd",null,p.payee||(S.suppliers[p.supplier_id]||{}).name||"—"),
+      h("dt",null,"Paid from"),h("dd",null,paidFrom(p)),h("dt",null,"Type"),h("dd",null,p.kind||"Expense"),h("dt",null,"Project"),h("dd",null,p.project||"—"),h("dt",null,"Category"),h("dd",null,p.category||"—"),
+      h("dt",null,"Envelope"),h("dd",null,(S.envelopes[p.envelope_id]||{}).name||"—"),h("dt",null,"Purchase request"),h("dd",null,p.request_id?h("a",{href:"#r-"+p.request_id,onclick:()=>dlg.close()},p.request_id):"—"),
+      h("dt",null,"Receipt"),h("dd",null,link(p.receipt_link)),h("dt",null,"Fiscal receipt"),h("dd",null,p.fiscal||"Not checked"),
+      h("dt",null,"Approval"),h("dd",null,p.status==="Approved"?(p.approval_basis||"Approved")+(p.decided_at?" · "+fmtTime(p.decided_at):""):p.status==="Rejected"?"Rejected by "+nameOf(p.decided_by)+(p.decision_comment?" · “"+p.decision_comment+"”":""):"Waiting for a decision"),
+      h("dt",null,"Recorded by"),h("dd",null,nameOf(p.recorded_by)+(p.recorded_at?" · "+fmtTime(p.recorded_at):"")),p.tracker_id?[h("dt",null,"Tracker Record ID"),h("dd",{class:"mono"},p.tracker_id)]:null,
+      p.notes?[h("dt",null,"Notes"),h("dd",null,p.notes)]:null)),acts)}
+function editPayment(id,preset){if(!canWrite())return;const p=id?S.payments[id]:Object.assign({date:today(),currency:"TZS",funding:"Personal",kind:"Expense"},preset||{});
+  const companyAccs=Object.values(S.accounts).filter(a=>a.holder==="Company").map(a=>[a.id,a.name]);
+  const canOnBehalf=hasAny(["custodian","admin"]);const people=Object.values(S.members).filter(m=>m.active).map(m=>[m.email,m.full_name||m.email]);
+  const fromSel=field("y-from","Paid from","select",p.funding==="Company"?"acc:"+(p.account_id||""):"me",{blank:false,options:[["me","My own money (TUSOME will owe me)"],...companyAccs.map(([k,l])=>["acc:"+k,"Company: "+l]),...(canOnBehalf?people.filter(x=>x[0]!==S.email).map(([k,l])=>["for:"+k,"Personal money of "+l]):[])]});
+  const note=h("div",{class:"rule",style:"grid-column:1/-1"});const more=h("div",{class:"fg",style:"grid-column:1/-1",hidden:!id&&!preset});
+  const env=Object.values(S.envelopes).filter(e=>e.status==="Active"||e.id===p.envelope_id).map(e=>[e.id,e.name+(e.pre_approved?" · pre-approved":"")+" · "+tzs(envelopeUse(e).left)+" left"]);
+  const approvedReqs=Object.values(S.requests).filter(r=>approvedAll(r)&&r.submitted||r.id===p.request_id).map(r=>[r.id,r.id+" · "+(r.title||"")+" · "+money(r.amount,r.currency)]);
+  more.append(field("y-payee","Paid to (shop, supplier or person)","text",p.payee),field("y-sup","Supplier (if registered)","select",p.supplier_id,{options:supOptions(),blank:"None"}),
+    field("y-proj","Project / client","text",p.project),field("y-cat","Category","select",p.category,{options:CATS}),field("y-kind","Type","select",p.kind,{options:PAY_KINDS,blank:false}),
+    field("y-req","For purchase request","select",p.request_id,{options:approvedReqs,blank:"None"}),field("y-fis","Fiscal receipt (EFD/VFD)","select",p.fiscal||"Not checked",{options:FISCAL,blank:false}),field("y-notes","Notes","textarea",p.notes,{full:true}));
+  const body=h("div",{class:"fg"},field("y-desc","What was it for?","text",p.description,{full:true,ph:"e.g. Fuel for Zanzibar field visit"}),field("y-amt","Amount","number",p.amount),field("y-cur","Currency","select",p.currency,{options:["TZS","USD"],blank:false}),
+    field("y-date","Date paid","date",p.date),fromSel,field("y-env","Envelope (budget)","select",p.envelope_id,{options:env,blank:"None"}),
+    field("y-rec","Link to receipt or proof of payment","url",p.receipt_link,{full:true,hint:"Required. A Google Drive link to the photo or PDF works."}),note,
+    h("button",{type:"button",class:"linkbtn",style:"grid-column:1/-1",onclick:e=>{more.hidden=!more.hidden;e.target.textContent=more.hidden?"More details (payee, project, category, request)":"Hide details"}},more.hidden?"More details (payee, project, category, request)":"Hide details"),more);
+  const preview=()=>{const amt=n0(val("y-amt"));if(!(amt>0)){note.replaceChildren("Enter the amount to see how it will be approved.");return}
+    const cur=val("y-cur")||"TZS",t=toTzs(amt,cur,val("y-date")||today()),u=amounts({amount:amt,currency:cur,date:val("y-date")}).usd;const e=S.envelopes[val("y-env")];const from=val("y-from");
+    let how;if(val("y-req"))how="Covered by approved purchase request "+val("y-req")+": approved automatically.";
+    else if(e&&e.pre_approved&&e.status==="Active"&&envelopeUse(e).left-(id&&p.envelope_id===e.id?0:t||0)>=0)how="Inside pre-approved envelope "+e.name+": approved automatically.";
+    else how=(u!=null&&u>cfg().thresholdUsd?"Above USD "+cfg().thresholdUsd.toLocaleString("en-GB")+": the Director must approve.":"A Band 1–2 approver or the Director must approve.");
+    note.replaceChildren(h("b",null,from==="me"||from.startsWith("for:")?"Personal money: added to Who we owe once approved.":"Company money."),how)};
+  body.addEventListener("input",preview);body.addEventListener("change",preview);
+  openDlg(id?"Edit "+id:"Record a payment",body,[saveBtn(id?"Save":"Record payment",async()=>{const desc=val("y-desc"),amt=n0(val("y-amt"));if(!desc||!(amt>0)){toast("Add what it was for and the amount.");return false}
+    if(!val("y-rec")){toast("Add the receipt link.");return false}const from=val("y-from");
+    const row={description:desc,amount:amt,currency:val("y-cur"),date:val("y-date")||today(),envelope_id:val("y-env")||null,receipt_link:val("y-rec"),payee:val("y-payee"),supplier_id:val("y-sup")||null,project:val("y-proj"),category:val("y-cat")||null,kind:val("y-kind")||"Expense",request_id:val("y-req")||null,fiscal:val("y-fis")||"Not checked",notes:val("y-notes"),
+      funding:from.startsWith("acc:")?"Company":"Personal",account_id:from.startsWith("acc:")?from.slice(4):null,payer:from.startsWith("for:")?from.slice(4):(from==="me"?S.email:null)};
+    if(id)return run(()=>sb.from("payments").update(row).eq("id",id),"Saved",["payments"]);
+    return run(()=>sb.from("payments").insert(Object.assign({id:"new"},row)),"Payment recorded",["payments","requests"])})]);preview()}
+function paymentEvidence(p){openDlg("Evidence · "+p.id,h("div",{class:"fg"},field("pe-r","Receipt link","url",p.receipt_link,{full:true}),field("pe-f","Fiscal receipt (EFD/VFD)","select",p.fiscal,{options:FISCAL,blank:false}),field("pe-s","Supplier (if registered)","select",p.supplier_id,{options:supOptions(),blank:"None"}),field("pe-n","Notes","textarea",p.notes,{full:true})),
+  [saveBtn("Save",()=>run(()=>sb.from("payments").update({receipt_link:val("pe-r"),fiscal:val("pe-f"),supplier_id:val("pe-s")||null,notes:val("pe-n")}).eq("id",p.id),"Saved",["payments"]))])}
+function decidePayment(p,decision){openDlg((decision==="Approved"?"Approve ":"Reject ")+p.id,h("div",{style:"display:grid;gap:10px"},h("div",{class:"rule"},h("b",null,p.description),paidFrom(p)+" · "+money(p.amount,p.currency)+" · "+fmtDate(p.date)),
+  p.receipt_link&&/^https?:/.test(p.receipt_link)?h("a",{href:p.receipt_link,target:"_blank",rel:"noopener"},"Open the receipt before deciding"):null,field("dp-c",decision==="Rejected"?"Reason for rejection (required)":"Comment (optional)","textarea","",{rows:3})),
+  [saveBtn(decision==="Approved"?"Approve":"Reject",async()=>{const cm=val("dp-c");if(decision==="Rejected"&&!cm){toast("Give a reason.");return false}return run(()=>sb.rpc("decide_payment",{p_id:p.id,p_decision:decision,p_comment:cm}),decision,["payments"])})])}
+
+/* ---- import from the expenditure tracker (admin) ---- */
+function parseCSV(t){const rows=[];let row=[],f="",q=false;for(let i=0;i<t.length;i++){const c=t[i];if(q){if(c==='"'){if(t[i+1]==='"'){f+='"';i++}else q=false}else f+=c}else if(c==='"')q=true;else if(c===","||c==="\t"){row.push(f);f=""}else if(c==="\n"){row.push(f);rows.push(row);row=[];f=""}else if(c!=="\r")f+=c}if(f||row.length){row.push(f);rows.push(row)}return rows.filter(r=>r.some(x=>x.trim()))}
+function toISO(d){d=String(d||"").trim();if(/^\d{4}-\d{2}-\d{2}/.test(d))return d.slice(0,10);const m=d.match(/^(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{2,4})$/);if(m){const y=m[3].length===2?"20"+m[3]:m[3];return y+"-"+m[2].padStart(2,"0")+"-"+m[1].padStart(2,"0")}const x=new Date(d);return isNaN(x)?"":x.toISOString().slice(0,10)}
+function importTracker(){const FIELDS=[["tracker_id","Record ID",/record|^id$|ref/i],["date","Date",/date/i],["description","What / purpose",/purpose|description|item|detail/i],["payee","Paid to",/payee|supplier|vendor|paid to/i],["amount","Amount",/amount|total|value/i],["currency","Currency",/curr/i],["category","Category",/categ|budget line/i],["project","Project",/project|activity/i],["paid","Payment type (paid personally?)",/payment status|paid|method/i],["account","Account used",/account|wallet|source/i],["payer","Paid by",/payer|paid by/i],["approval","Approval status",/approv(al)? status|^approval$/i],["receipt","Evidence link",/url|link|evidence|file/i]];
+  let data=[];const map={};const mapBox=h("div",{class:"fg"});const prev=h("div",{class:"small"});
+  const accFor=a=>{a=String(a||"").toLowerCase();const hit=Object.values(S.accounts).find(x=>x.name&&a&&(a.includes(x.name.toLowerCase())||x.name.toLowerCase().includes(a)));if(a.includes("founder"))return "ACC-05";if(a.includes("pesapal"))return "ACC-02";if(a.includes("joseph"))return "ACC-07";if(a.includes("visa")||a.includes("card"))return "ACC-08";if(a.includes("hamis"))return "ACC-06";return hit?hit.id:""};
+  const payerFor=t=>{t=String(t||"").toLowerCase();const m=Object.values(S.members).find(x=>x.full_name&&t.includes(x.full_name.split(" ")[0].toLowerCase()));return m?m.email:""};
+  function build(){const hdr=data[0]||[];mapBox.replaceChildren(...FIELDS.map(([k,l,re])=>{if(map[k]===undefined){const i=hdr.findIndex(x=>re.test(x));map[k]=i}return h("label",{class:"f"},l,h("select",{onchange:e=>{map[k]=Number(e.target.value);show()}},h("option",{value:"-1"},"(not in file)"),hdr.map((x,i)=>h("option",{value:i,selected:map[k]===i?true:null},x||"Column "+(i+1)))))}));show()}
+  function rowsOut(){const g=(r,k)=>map[k]>=0?String(r[map[k]]||"").trim():"";return data.slice(1).map(r=>{const acc=accFor(g(r,"account"));const personal=/personal/i.test(g(r,"paid"))||(acc&&(S.accounts[acc]||{}).holder==="Personal");
+    return{tracker_id:g(r,"tracker_id"),date:toISO(g(r,"date")),description:g(r,"description"),payee:g(r,"payee"),amount:Number(g(r,"amount").replace(/[^0-9.\-]/g,"")),currency:/usd/i.test(g(r,"currency"))?"USD":"TZS",category:g(r,"category"),project:g(r,"project"),
+      funding:personal?"Personal":"Company",account_id:acc,payer:personal?(payerFor(g(r,"payer"))||payerFor(g(r,"account"))||""):"",receipt_link:/^https?:/.test(g(r,"receipt"))?g(r,"receipt"):"",approved:/approved/i.test(g(r,"approval")),notes:"Imported from the expenditure tracker. Account in tracker: "+(g(r,"account")||"not recorded")+"; paid by: "+(g(r,"payer")||"not recorded")}}).filter(x=>x.tracker_id&&x.amount>0&&x.date)}
+  function show(){const out=rowsOut();const dup=out.filter(x=>Object.values(S.payments).some(p=>p.tracker_id===x.tracker_id)).length;
+    prev.replaceChildren(h("b",null,out.length+" rows ready"),", "+dup+" already in the platform (they will be skipped). ",out.slice(0,3).map(x=>h("div",{class:"muted"},x.tracker_id+" · "+x.date+" · "+x.description+" · "+money(x.amount,x.currency)+" · "+x.funding)))}
+  const file=h("input",{type:"file",accept:".csv,.tsv,.txt",onchange:async e=>{const f=e.target.files[0];if(!f)return;data=parseCSV(await f.text());build()}});
+  const paste=h("textarea",{rows:3,placeholder:"…or paste the rows here, including the header row",oninput:e=>{data=parseCSV(e.target.value);build()}});
+  openDlg("Import from the expenditure tracker",h("div",{style:"display:grid;gap:12px"},
+    h("p",{class:"small muted",style:"margin:0"},"In Excel, open the tracker's expenses sheet → File → Save As → CSV. Upload it here, check the column matches, then import. Rows already imported (same Record ID) are skipped. Imported personal payments do not change Who we owe; the opening balances already cover them."),
+    h("label",{class:"f"},"CSV file",file),paste,mapBox,prev),[saveBtn("Import",async()=>{const out=rowsOut();if(!out.length){toast("Nothing to import yet.");return false}
+      const res=await run(()=>sb.rpc("import_payments",{p_rows:out}),null,["payments"]);if(res&&res.data!=null)toast(res.data+" payments imported");return !!res})])}
+
+/* ---- spending overview ---- */
+function spendRows(m){return Object.values(S.payments).filter(p=>monthOf(p.date)===m&&p.status!=="Rejected"&&!p.opening)}
+function lastMonths(n){const out=[];const d=new Date(month+"-01T00:00:00");for(let i=n-1;i>=0;i--){const x=new Date(d.getFullYear(),d.getMonth()-i,1);out.push(x.getFullYear()+"-"+String(x.getMonth()+1).padStart(2,"0"))}return out}
+const monthName=m=>new Date(m+"-01T00:00:00").toLocaleDateString("en-GB",{month:"long",year:"numeric"});
+function groupSum(rows,key){const g={};rows.forEach(p=>{const k=key(p)||"Not set";g[k]=(g[k]||0)+(toTzs(p.amount,p.currency,p.date)||0)});return Object.entries(g).sort((a,b)=>b[1]-a[1])}
+function barList(title,pairs,total,limit){const top=pairs.slice(0,limit||8);const rest=pairs.slice(limit||8).reduce((t,x)=>t+x[1],0);if(rest>0)top.push(["Other",rest]);const max=Math.max(1,...top.map(x=>x[1]));
+  return h("section",{class:"panel"},h("div",{class:"ph"},h("h2",null,title)),!top.length?empty("No spending this month."):h("div",{style:"padding:12px 16px;display:grid;gap:10px"},top.map(([k,v])=>h("div",null,
+    h("div",{class:"kv"},h("span",{style:"color:var(--ink);font-weight:600;min-width:0;overflow-wrap:anywhere"},k),h("span",{class:"num"},tzs(v)+(total?" · "+Math.round(v/total*100)+"%":""))),
+    h("div",{class:"envbar"},h("i",{style:"width:"+(v/max*100)+"%"}))))))}
+function vSpending(){const rows=spendRows(month);const total=rows.reduce((t,p)=>t+(toTzs(p.amount,p.currency,p.date)||0),0);
+  const prevM=lastMonths(2)[0];const prevTotal=spendRows(prevM).reduce((t,p)=>t+(toTzs(p.amount,p.currency,p.date)||0),0);
+  const personal=rows.filter(p=>p.funding==="Personal").reduce((t,p)=>t+(toTzs(p.amount,p.currency,p.date)||0),0);
+  const pending=rows.filter(p=>p.status==="Submitted");const withReceipt=rows.filter(p=>/^https?:/.test(p.receipt_link||"")).length;
+  const fiscalOk=rows.filter(p=>["Verified","Exception approved"].includes(p.fiscal)).length;
+  const months=lastMonths(6).map(m=>[m,spendRows(m).reduce((t,p)=>t+(toTzs(p.amount,p.currency,p.date)||0),0)]);const mmax=Math.max(1,...months.map(x=>x[1]));
+  const allMonths=[...new Set(Object.values(S.payments).map(p=>monthOf(p.date)).filter(Boolean).concat([new Date().toISOString().slice(0,7)]))].sort().reverse();
+  const change=prevTotal?Math.round((total-prevTotal)/prevTotal*100):null;
+  return [header("Spending overview","What TUSOME spent in "+monthName(month)+", from company accounts and staff's own money. Amounts in TZS at the approval FX rate; rejected payments excluded.",
+      h("select",{"aria-label":"Month",class:"btn",onchange:e=>{month=e.target.value;render()}},allMonths.map(m=>h("option",{value:m,selected:m===month?true:null},monthName(m)))),
+      h("button",{class:"btn",onclick:()=>exportCSV(rows)},"Export CSV")),
+    h("div",{class:"tiles"},tile(tzs(total),"Spent in "+monthName(month)+(change!=null?" · "+(change>=0?"+":"")+change+"% vs "+monthName(prevM):"")),tile(rows.length,"Payments"),
+      tile(total?Math.round(personal/total*100)+"%":"—","Paid with personal money ("+tzs(personal)+")"),tile(pending.length,"Awaiting approval",()=>{ptab="waiting";go("payments")}),
+      tile(rows.length?Math.round(withReceipt/rows.length*100)+"%":"—","Have a receipt link"),tile(rows.length?Math.round(fiscalOk/rows.length*100)+"%":"—","Fiscal receipt verified")),
+    h("section",{class:"panel"},h("div",{class:"ph"},h("h2",null,"Last 6 months")),h("div",{style:"padding:14px 16px;display:grid;grid-template-columns:repeat(6,1fr);gap:10px;align-items:end;height:190px"},
+      months.map(([m,v])=>h("button",{style:"display:flex;flex-direction:column;justify-content:flex-end;align-items:stretch;gap:4px;height:100%;border:0;background:none;cursor:pointer;padding:0;min-width:0",onclick:()=>{month=m;render()},"aria-label":monthName(m)+": "+tzs(v)},
+        h("span",{class:"small num",style:"text-align:center;font-size:11px;color:var(--muted)"},v?(v>=1e6?(v/1e6).toFixed(1)+"m":Math.round(v/1e3)+"k"):"0"),
+        h("span",{style:"display:block;border-radius:4px 4px 0 0;background:"+(m===month?"var(--brand)":"var(--line)")+";height:"+Math.max(2,v/mmax*120)+"px"}),
+        h("span",{class:"small",style:"text-align:center;font-weight:"+(m===month?"700":"500")},new Date(m+"-01T00:00:00").toLocaleDateString("en-GB",{month:"short"})))))),
+    h("div",{class:"grid2"},barList("By category",groupSum(rows,p=>p.category),total),barList("By project",groupSum(rows,p=>p.project),total),
+      barList("By envelope",groupSum(rows,p=>(S.envelopes[p.envelope_id]||{}).name||"No envelope"),total),barList("Top payees",groupSum(rows,p=>p.payee||(S.suppliers[p.supplier_id]||{}).name),total,6),
+      barList("Paid from",groupSum(rows,paidFrom),total),barList("By type",groupSum(rows,p=>p.kind),total)),
+    h("section",{class:"panel"},h("div",{class:"ph"},h("h2",null,"Largest payments")),!rows.length?empty("No payments in this month."):
+      T([{l:"What",primary:true},{l:"Date"},{l:"Paid to"},{l:"Paid from"},{l:"Amount",num:true},{l:"Status"}],rows.slice().sort((a,b)=>(toTzs(b.amount,b.currency,b.date)||0)-(toTzs(a.amount,a.currency,a.date)||0)).slice(0,10).map(p=>[p.description,fmtDate(p.date),p.payee||"—",paidFrom(p),money(p.amount,p.currency),pill(PAY_LABEL[p.status],PAY_PILL[p.status])]),
+        i=>{const list=rows.slice().sort((a,b)=>(toTzs(b.amount,b.currency,b.date)||0)-(toTzs(a.amount,a.currency,a.date)||0));return ()=>showPayment(list[i].id)}))]}
+function exportCSV(rows){const cols=["id","tracker_id","date","description","payee","amount","currency","amount_tzs","kind","category","project","envelope","funding","paid_from","status","approval_basis","fiscal","receipt_link","recorded_by"];
+  const esc=v=>{v=v==null?"":String(v);return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v};
+  const lines=[cols.join(",")].concat(rows.map(p=>[p.id,p.tracker_id,p.date,p.description,p.payee,p.amount,p.currency,Math.round(toTzs(p.amount,p.currency,p.date)||0),p.kind,p.category,p.project,(S.envelopes[p.envelope_id]||{}).name,p.funding,paidFrom(p),p.status,p.approval_basis,p.fiscal,p.receipt_link,p.recorded_by].map(esc).join(",")));
+  const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([lines.join("\n")],{type:"text/csv"}));a.download="tusome-payments-"+month+".csv";document.body.append(a);a.click();a.remove()}
 
 /* ---- who we owe ---- */
 function vOwed(){const people=owedByPerson().filter(p=>Object.keys(p.owed).length||Object.keys(p.pending).length||Object.keys(p.paid).length).sort((a,b)=>toTzsSum(b.owed)-toTzsSum(a.owed));
   const canPay=hasAny(["custodian","admin"]);const reimbs=Object.values(S.reimbursements).sort((a,b)=>(b.date+b.id).localeCompare(a.date+a.id));
   const totalOwed={};people.forEach(p=>Object.entries(p.owed).forEach(([c,v])=>totalOwed[c]=(totalOwed[c]||0)+v));
-  return [header("Who we owe",(seesAllClaims()?"Approved expense claims not yet reimbursed, by person. ":"What TUSOME owes you. ")+"A reimbursement settles approved claims and must carry the expenditure tracker Record ID.",newBtn("New expense",()=>editClaim())),
-    h("div",{class:"tiles"},tile(fmtByCur(totalOwed),seesAllClaims()?"Total owed to staff":"Owed to you"),tile(people.reduce((n,p)=>n+p.claims.filter(c=>c.status==="Submitted").length,0),"Claims awaiting approval"),tile(reimbs.length,"Reimbursements recorded")),
+  return [header("Who we owe",(seesAllClaims()?"Money staff paid personally for TUSOME, approved but not yet paid back. ":"What TUSOME owes you. ")+"Pay back in full or in part.",newBtn("Record a payment",()=>editPayment())),
+    h("div",{class:"tiles"},tile(fmtByCur(totalOwed),seesAllClaims()?"Total owed to staff":"Owed to you"),tile(fmtByCur(people.reduce((o,p)=>{Object.entries(p.pending).forEach(([c,v])=>o[c]=(o[c]||0)+v);return o},{})),"Personal payments awaiting approval"),tile(reimbs.length,"Repayments recorded")),
     h("section",{class:"panel"},!people.length?empty("Nobody is owed anything."):
-      T([{l:"Person",primary:true},{l:"Owed now",num:true},{l:"Awaiting approval",num:true},{l:"Reimbursed to date",num:true},{l:""}],
+      T([{l:"Person",primary:true},{l:"Owed now",num:true},{l:"Awaiting approval",num:true},{l:"Paid back so far",num:true},{l:""}],
         people.map(p=>[h("div",null,h("div",{style:"font-weight:700"},nameOf(p.who)),String(p.who).startsWith("name:")?h("div",{class:"small muted"},"No login"):null),fmtByCur(p.owed),fmtByCur(p.pending),fmtByCur(p.paid),
-          canPay&&Object.keys(p.owed).length&&p.who!==S.email?h("button",{class:"btn sm primary",onclick:e=>{e.stopPropagation();reimburse(p)}},"Reimburse"):h("button",{class:"btn sm",onclick:e=>{e.stopPropagation();personClaims(p)}},"Details")]),i=>()=>personClaims(people[i]))),
-    h("section",{class:"panel"},h("div",{class:"ph"},h("h2",null,"Reimbursements")),!reimbs.length?empty("No reimbursements recorded yet."):
-      T([{l:"Person",primary:true},{l:"Number",mono:true},{l:"Date"},{l:"Amount",num:true},{l:"From"},{l:"Tracker ID",mono:true},{l:"Recorded by"}],reimbs.map(r=>[nameOf(r.claimant),r.id,fmtDate(r.date),money(r.amount,r.currency),(S.accounts[r.account_id]||{}).name||"—",r.tracker_id,nameOf(r.recorded_by)])))]}
-function personClaims(p){openDlg(nameOf(p.who),h("div",{class:"list"},p.claims.slice().sort((a,b)=>(b.date||"").localeCompare(a.date||"")).map(c=>h("button",{class:"li",onclick:()=>showClaim(c.id)},h("div",null,h("div",{class:"t"},c.description),h("div",{class:"small muted"},c.id+" · "+fmtDate(c.date))),h("div",{style:"text-align:right"},h("div",{class:"num",style:"font-weight:700"},money(c.amount,c.currency)),pill(c.status,CLAIM_PILL[c.status]))))),[])}
-function reimburse(p){const ok=p.claims.filter(c=>c.status==="Approved");const curs=[...new Set(ok.map(c=>c.currency))];let cur=curs[0];
-  const box=h("div",{style:"display:grid;gap:6px"});const total=h("div",{class:"rule"});
-  function draw(){box.replaceChildren(...ok.filter(c=>c.currency===cur).map(c=>h("label",{class:"row small",style:"gap:8px;font-weight:600;justify-content:space-between;border-bottom:1px solid var(--line);padding:6px 0"},h("span",{class:"row",style:"gap:8px"},h("input",{type:"checkbox",value:c.id,checked:true,onchange:sum}),c.id+" · "+c.description),money(c.amount,c.currency))));sum()}
-  function sum(){const ids=[...box.querySelectorAll("input:checked")].map(i=>i.value);const t=ok.filter(c=>ids.includes(c.id)).reduce((s,c)=>s+n0(c.amount),0);total.replaceChildren(h("b",null,"Reimburse "+money(t,cur)),ids.length+" claim(s). Enter the payment in the expenditure tracker first.")}
-  const body=h("div",{class:"fg"},curs.length>1?field("rb-cur","Currency","select",cur,{options:curs,blank:false}):null,h("div",{style:"grid-column:1/-1"},box),h("div",{style:"grid-column:1/-1"},total),
-    field("rb-d","Date paid","date",today()),field("rb-a","Paid from","select","",{options:Object.values(S.accounts).filter(a=>a.holder==="Company").map(a=>[a.id,a.name])}),field("rb-t","Tracker Record ID","text","",{full:true,ph:"e.g. Q426-150"}));
-  openDlg("Reimburse "+nameOf(p.who),body,[saveBtn("Record reimbursement",async()=>{const ids=[...box.querySelectorAll("input:checked")].map(i=>i.value);if(!ids.length){toast("Select at least one claim.");return false}
-    if(!val("rb-t")){toast("Add the tracker Record ID.");return false}
-    return run(()=>sb.rpc("record_reimbursement",{p_claim_ids:ids,p_date:val("rb-d")||today(),p_account:val("rb-a"),p_tracker:val("rb-t")}),"Reimbursement recorded",["claims","reimbursements"])})]);
-  const cs=document.getElementById("rb-cur");if(cs)cs.addEventListener("change",()=>{cur=cs.value;draw()});draw()}
+          h("span",{class:"row",style:"justify-content:flex-end"},canPay&&Object.values(p.owed).some(v=>v>0)&&p.who!==S.email?h("button",{class:"btn sm primary",onclick:e=>{e.stopPropagation();repay(p)}},"Pay back"):null,h("button",{class:"btn sm",onclick:e=>{e.stopPropagation();personItems(p)}},"Details"))]),i=>()=>personItems(people[i]))),
+    h("section",{class:"panel"},h("div",{class:"ph"},h("h2",null,"Repayments")),!reimbs.length?empty("No repayments recorded yet."):
+      T([{l:"Person",primary:true},{l:"Number",mono:true},{l:"Date"},{l:"Amount",num:true},{l:"From"},{l:"Reference"},{l:"Recorded by"}],reimbs.map(r=>[nameOf(r.claimant),r.id,fmtDate(r.date),money(r.amount,r.currency),(S.accounts[r.account_id]||{}).name||"—",r.reference||r.tracker_id||"—",nameOf(r.recorded_by)])))]}
+function personItems(p){const reps=Object.values(S.reimbursements).filter(r=>r.claimant===p.who);
+  openDlg(nameOf(p.who),h("div",{style:"display:grid;gap:12px"},h("div",{class:"rule"},h("b",null,"Owed now: "+fmtByCur(p.owed)),"Awaiting approval: "+fmtByCur(p.pending)+" · Paid back: "+fmtByCur(p.paid)),
+    h("div",{class:"list"},p.items.slice().sort((a,b)=>(b.date||"").localeCompare(a.date||"")).map(x=>h("button",{class:"li",onclick:()=>showPayment(x.id)},h("div",null,h("div",{class:"t"},x.description),h("div",{class:"small muted"},x.id+" · "+fmtDate(x.date))),h("div",{style:"text-align:right"},h("div",{class:"num",style:"font-weight:700"},money(x.amount,x.currency)),pill(PAY_LABEL[x.status],PAY_PILL[x.status])))),
+      reps.map(r=>h("div",{class:"li",style:"cursor:default"},h("div",null,h("div",{class:"t"},"Paid back"),h("div",{class:"small muted"},r.id+" · "+fmtDate(r.date))),h("div",{class:"num",style:"font-weight:700;color:var(--ok)"},"− "+money(r.amount,r.currency)))))),[])}
+function repay(p){const curs=Object.keys(p.owed).filter(c=>p.owed[c]>0);const cur0=curs[0];
+  const body=h("div",{class:"fg"},field("rp-cur","Currency","select",cur0,{options:curs,blank:false}),field("rp-amt","Amount paid back","number",p.owed[cur0],{hint:"Owed now: "+fmtByCur(p.owed)+". Change it for a part-payment."}),
+    field("rp-d","Date paid","date",today()),field("rp-a","Paid from","select","",{options:Object.values(S.accounts).filter(a=>a.holder==="Company").map(a=>[a.id,a.name])}),field("rp-r","Reference (e.g. Selcom or bank reference)","text","",{full:true}));
+  openDlg("Pay back "+nameOf(p.who),body,[saveBtn("Record repayment",()=>{const amt=n0(val("rp-amt"));if(!(amt>0)){toast("Enter the amount.");return false}
+    return run(()=>sb.rpc("record_repayment",{p_person:p.who,p_amount:amt,p_currency:val("rp-cur"),p_date:val("rp-d")||today(),p_account:val("rp-a"),p_reference:val("rp-r")}),"Repayment recorded",["reimbursements"])})]);
+  document.getElementById("rp-cur").addEventListener("change",e=>{document.getElementById("rp-amt").value=p.owed[e.target.value]})}
 
 /* ---- envelopes ---- */
 function vEnvelopes(){const list=Object.values(S.envelopes).sort((a,b)=>(a.status===b.status?0:a.status==="Active"?-1:1)||a.name.localeCompare(b.name));
   return [header("Envelopes","Budgets for each activity: how much is set aside, where the money comes from, and how much is already committed. Only administrators can create or change them.",newBtn("New envelope",()=>editEnvelope(),isAdmin())),
     !list.length?h("section",{class:"panel"},empty(isAdmin()?"No envelopes yet. Select “New envelope” to set the first activity budget.":"No envelopes yet. The Director sets them up.")):
     h("div",{class:"cards"},list.map(e=>{const u=envelopeUse(e);const pc=u.budget?Math.min(100,u.used/u.budget*100):0;
-      return h("div",{class:"card",style:"cursor:pointer",onclick:()=>showEnvelope(e.id)},h("div",{class:"row",style:"justify-content:space-between"},h("div",{class:"t"},e.name),pill(e.status,e.status==="Active"?"p-ok":"p-mute")),
+      return h("div",{class:"card",style:"cursor:pointer",onclick:()=>showEnvelope(e.id)},h("div",{class:"row",style:"justify-content:space-between"},h("div",{class:"t"},e.name),h("span",{class:"row",style:"gap:4px"},e.pre_approved?pill("Pre-approved","p-brand"):null,pill(e.status,e.status==="Active"?"p-ok":"p-mute"))),
         h("div",{class:"small muted"},[e.id,e.activity,e.project].filter(Boolean).join(" · ")),
         h("div",{class:"kv"},h("span",null,"Budget"),h("span",null,money(e.amount,e.currency))),h("div",{class:"kv"},h("span",null,"Committed"),h("span",null,tzs(u.used))),
         h("div",{class:"kv"},h("span",null,"Remaining"),h("span",{style:u.left<0?"color:var(--bad);font-weight:700":"font-weight:700"},tzs(u.left))),
@@ -314,16 +401,18 @@ function vEnvelopes(){const list=Object.values(S.envelopes).sort((a,b)=>(a.statu
 function showEnvelope(id){const e=S.envelopes[id];const u=envelopeUse(e);
   openDlg(e.name,h("div",{style:"display:grid;gap:14px"},h("dl",null,h("dt",null,"Activity"),h("dd",null,e.activity||"—"),h("dt",null,"Project / client"),h("dd",null,e.project||"—"),h("dt",null,"Budget"),h("dd",null,money(e.amount,e.currency)),
       h("dt",null,"Money from"),h("dd",null,e.funding_source||"—"),h("dt",null,"Held in"),h("dd",null,(S.accounts[e.account_id]||{}).name||"—"),h("dt",null,"Period"),h("dd",null,(e.start_date?fmtDate(e.start_date):"—")+" to "+(e.end_date?fmtDate(e.end_date):"—")),
-      h("dt",null,"Committed"),h("dd",null,tzs(u.used)+" ("+tzs(u.req)+" requests, "+tzs(u.cl)+" claims)"),h("dt",null,"Remaining"),h("dd",null,tzs(u.left)),e.notes?[h("dt",null,"Notes"),h("dd",null,e.notes)]:null),
+      h("dt",null,"Approval"),h("dd",null,e.pre_approved?"Pre-approved by "+nameOf(e.approved_by)+(e.approved_at?" on "+fmtDate(e.approved_at):"")+": spending inside it needs no separate approval":"Each purchase and payment needs approval"),h("dt",null,"Committed"),h("dd",null,tzs(u.used)+" ("+tzs(u.req)+" requests, "+tzs(u.cl)+" direct payments)"),h("dt",null,"Remaining"),h("dd",null,tzs(u.left)),e.notes?[h("dt",null,"Notes"),h("dd",null,e.notes)]:null),
     u.items.length?T([{l:"Item",primary:true},{l:"Type"},{l:"Number",mono:true},{l:"TZS",num:true}],u.items.map(x=>[x[2]||"—",x[0],x[1],tzs(x[3])])):h("div",{class:"small muted"},"Nothing charged to this envelope yet. Choose it on a purchase request or an expense claim.")),
     isAdmin()?[h("button",{class:"btn primary",onclick:()=>{dlg.close();editEnvelope(id)}},"Edit envelope")]:[])}
 function editEnvelope(id){if(!isAdmin())return;const e=id?S.envelopes[id]:{currency:"TZS",status:"Active"};
   openDlg(id?"Edit "+e.name:"New envelope",h("div",{class:"fg"},field("e-n","Envelope name","text",e.name,{full:true,ph:"e.g. AI RCT Zanzibar endline"}),field("e-ac","Activity","text",e.activity),field("e-p","Project / client","text",e.project),
     field("e-a","Budget amount","number",e.amount),field("e-c","Currency","select",e.currency,{options:["TZS","USD"],blank:false}),field("e-f","Where the money comes from","text",e.funding_source,{full:true,ph:"e.g. Client payment, grant tranche 2, own funds"}),
     field("e-acc","Held in (bank or wallet)","select",e.account_id,{options:Object.values(S.accounts).map(a=>[a.id,a.name]),blank:"Not set"}),field("e-s","Status","select",e.status,{options:["Active","Closed"],blank:false}),
-    field("e-sd","Start date","date",e.start_date),field("e-ed","End date","date",e.end_date),field("e-no","Notes","textarea",e.notes,{full:true})),
+    field("e-sd","Start date","date",e.start_date),field("e-ed","End date","date",e.end_date),
+    h("label",{class:"row",style:"grid-column:1/-1;gap:8px;font-weight:600;align-items:flex-start"},h("input",{id:"e-pre",type:"checkbox",checked:e.pre_approved?true:null}),h("span",null,"Pre-approved",h("span",{class:"hint",style:"display:block;font-weight:500"},"Purchases and payments inside this budget are approved automatically until it is used up. Quotations and receipts are still required."))),
+    field("e-no","Notes","textarea",e.notes,{full:true})),
     [saveBtn("Save envelope",async()=>{const name=val("e-n");if(!name){toast("Name the envelope.");return false}
-      const row={name,activity:val("e-ac"),project:val("e-p"),amount:n0(val("e-a")),currency:val("e-c"),funding_source:val("e-f"),account_id:val("e-acc")||null,status:val("e-s"),start_date:val("e-sd")||null,end_date:val("e-ed")||null,notes:val("e-no")};
+      const row={name,activity:val("e-ac"),project:val("e-p"),amount:n0(val("e-a")),currency:val("e-c"),funding_source:val("e-f"),account_id:val("e-acc")||null,status:val("e-s"),start_date:val("e-sd")||null,end_date:val("e-ed")||null,notes:val("e-no"),pre_approved:document.getElementById("e-pre").checked};
       if(id)return run(()=>sb.from("envelopes").update(row).eq("id",id),"Envelope saved",["envelopes"]);
       const nid=await sb.rpc("next_id",{kind:"envelope"});if(nid.error){toast(friendly(nid.error));return false}return run(()=>sb.from("envelopes").insert(Object.assign({id:nid.data},row)),"Envelope "+nid.data+" created",["envelopes"])})])}
 
@@ -396,8 +485,8 @@ function vSetup(){const c=cfg(),admin=isAdmin();const rates=c.fxRates.slice().so
   return [header("Rules & roles","These settings drive every calculation. Only administrators can change them, and every change is in the audit trail.",admin?h("button",{class:"btn",onclick:editRules},"Edit thresholds"):null),
     h("div",{class:"grid2"},
       h("section",{class:"panel"},h("div",{class:"ph"},h("h2",null,"Approvers"),admin?h("a",{href:"#people",class:"small"},"Manage people"):null),
-        h("div",{style:"padding:12px 16px"},h("dl",null,...["director","approver","custodian","auditor"].flatMap(r=>[h("dt",null,ROLE_NAME[r]),h("dd",null,emailsWithRole(r).length?emailsWithRole(r).map(nameOf).join(", "):pill("Not assigned",r==="director"||r==="approver"?"p-bad":"p-mute"))])),
-          h("p",{class:"small muted",style:"margin:10px 0 0"},"Requests: Band 1–2 need one Band 1–2 approver; Band 3 needs a Band 1–2 approver, then the Director. Expense claims: a Band 1–2 approver or the Director, and the Director above USD "+c.thresholdUsd.toLocaleString("en-GB")+". Nobody approves their own."))),
+        h("div",{style:"padding:12px 16px"},h("dl",null,...["director","alt_director","approver","custodian","auditor"].flatMap(r=>[h("dt",null,ROLE_NAME[r]),h("dd",null,emailsWithRole(r).length?emailsWithRole(r).map(nameOf).join(", "):pill("Not assigned",r==="director"||r==="approver"?"p-bad":"p-mute"))])),
+          h("p",{class:"small muted",style:"margin:10px 0 0"},"Requests: Band 1–2 need one Band 1–2 approver; Band 3 needs a Band 1–2 approver, then the Director. Payments not covered by an approved request or a pre-approved envelope: a Band 1–2 approver or the Director, and the Director above USD "+c.thresholdUsd.toLocaleString("en-GB")+". The alternate decides the Director's own items above that. Nobody approves their own."))),
       h("section",{class:"panel"},h("div",{class:"ph"},h("h2",null,"Quotation bands")),
         T([{l:"Band",primary:true},{l:"Applies to"},{l:"Quotes"},{l:"Approval"}],[1,2,3].map(n=>["Band "+n,bandText(n),n,n===3?"Band 1–2 approver, then Director":"Band 1–2 approver"])),
         h("div",{class:"small muted",style:"padding:10px 16px"},"Split-purchase window: "+c.splitDays+" days · Policy start: "+fmtDate(c.policyDate)+" · Contract warning: "+c.contractWarnDays+" days"))),
@@ -425,7 +514,7 @@ function renderSheet(){const root=$("#sheetRoot");if(!sheetFor){root.replaceChil
   if(now&&hasRole(STEP_ROLE[now.step])&&!isReq){acts.push(h("button",{class:"btn ok",onclick:()=>decide(r,now.step,"Approved")},"Approve"));acts.push(h("button",{class:"btn danger",onclick:()=>decide(r,now.step,"Rejected")},"Reject"))}
   if(cw&&approvedAll(r)&&!r.delivery)acts.push(h("button",{class:"btn primary",onclick:()=>recordDelivery(r)},"Confirm delivery (F08)"));
   if(cw&&approvedAll(r)&&r.delivery&&!r.invoice)acts.push(h("button",{class:"btn primary",onclick:()=>recordInvoice(r)},"Record invoice"));
-  if(cw&&r.invoice&&!r.payment&&approvedAll(r))acts.push(h("button",{class:"btn primary",onclick:()=>recordPayment(r)},"Record payment"));
+  if(cw&&approvedAll(r)&&!r.payment)acts.push(h("button",{class:r.invoice||r.envelopeCovered?"btn primary":"btn",onclick:()=>editPayment(null,{request_id:r.id,description:r.title,amount:r.invoice?r.invoice.amount:r.amount,currency:r.currency,supplier_id:r.supplierId,payee:(S.suppliers[r.supplierId]||{}).name,project:r.project,category:r.category,envelope_id:r.envelopeId,funding:"Company"})},"Record payment"));
   if(cw&&(r.invoice||r.payment||r.retro))acts.push(h("button",{class:"btn",onclick:()=>editEvidence(r)},"Evidence & tax"));
   const hist=S.audit.filter(x=>x.row_id===r.id||(x.table_name==="approvals"&&(x.new_data||{}).request_id===r.id));
   const link=(u,t)=>u?h("a",{href:u,target:"_blank",rel:"noopener"},t||"Open file"):null;const env=S.envelopes[r.envelopeId];
@@ -436,7 +525,7 @@ function renderSheet(){const root=$("#sheetRoot");if(!sheetFor){root.replaceChil
     h("div",{class:"sec"},h("h3",null,"Approval chain"),h("div",{class:"chain"},
       h("div",{class:"step done"},h("div",{class:"dot"},"✓"),h("div",null,h("div",{class:"st"},"Raised by "+nameOf(r.requester)),h("div",{class:"small muted"},fmtDate(r.date)+(r.submittedAt?" · submitted "+fmtTime(r.submittedAt):" · not submitted")+(r.rev>1?" · revision "+r.rev:"")))),
       ch.map(x=>h("div",{class:"step "+(x.s==="done"?"done":x.s==="rej"?"rej":x.s==="now"?"now":"")},h("div",{class:"dot"},x.s==="done"?"✓":x.s==="rej"?"✕":""),h("div",null,h("div",{class:"st"},STEP_NAME[x.step]),
-        h("div",{class:"small muted"},x.dec?(x.dec.decision+" by "+nameOf(x.dec.by_email)+" on "+fmtTime(x.dec.at)):x.s==="now"?"Waiting for "+(emailsWithRole(STEP_ROLE[x.step]).filter(e=>e!==r.requester).map(nameOf).join(" or ")||"an assigned person"):"Not yet reached"),x.dec&&x.dec.comment?h("div",{class:"small"},"“"+x.dec.comment+"”"):null))))),
+        h("div",{class:"small muted"},x.env?"Covered by pre-approved envelope "+((S.envelopes[r.envelopeId]||{}).name||r.envelopeId):x.dec?(x.dec.decision+" by "+nameOf(x.dec.by_email)+" on "+fmtTime(x.dec.at)):x.s==="now"?"Waiting for "+(emailsWithRole(STEP_ROLE[x.step]).filter(e=>e!==r.requester).map(nameOf).join(" or ")||"an assigned person"):"Not yet reached"),x.dec&&x.dec.comment?h("div",{class:"small"},"“"+x.dec.comment+"”"):null))))),
     h("div",{class:"sec"},h("h3",null,"Request"),h("dl",null,
       h("dt",null,"Item"),h("dd",null,r.title||"—"),h("dt",null,"Purpose"),h("dd",null,r.purpose||"—"),h("dt",null,"Project / client"),h("dd",null,r.project||"—"),h("dt",null,"Envelope"),h("dd",null,env?env.name+" · "+tzs(envelopeUse(env).left)+" remaining":"—"),
       h("dt",null,"Category"),h("dd",null,r.category||"—"),h("dt",null,"Type"),h("dd",null,r.kind||"—"),
@@ -450,7 +539,7 @@ function renderSheet(){const root=$("#sheetRoot");if(!sheetFor){root.replaceChil
       h("dt",null,"Delivery (F08)"),h("dd",null,r.delivery?fmtDate(r.delivery.date)+" ":"—",r.delivery?link(r.delivery.link,"file"):null),
       h("dt",null,"Invoice"),h("dd",null,r.invoice?(r.invoice.no||"No number")+" · "+money(r.invoice.amount,r.currency)+" ":"—",r.invoice?link(r.invoice.link,"file"):null),
       h("dt",null,"Fiscal receipt"),h("dd",null,(r.invoice&&r.invoice.fiscal)||"—"),
-      h("dt",null,"Payment"),h("dd",null,r.payment?money(r.payment.amount,r.currency)+" on "+fmtDate(r.payment.date)+" from "+((S.accounts[r.payment.account]||{}).name||r.payment.account||"—"):"—"),
+      h("dt",null,"Payment"),h("dd",null,r.payment?money(r.payment.amount,r.currency)+" on "+fmtDate(r.payment.date)+" from "+((S.accounts[r.payment.account]||{}).name||r.payment.account||"—"):reqPayments(r).length?reqPayments(r).map(p=>h("div",null,h("a",{href:"#",onclick:e=>{e.preventDefault();showPayment(p.id)}},p.id),", "+money(p.amount,p.currency)+" on "+fmtDate(p.date)+" from "+paidFrom(p))):"—"),
       h("dt",null,"Tracker Record ID"),h("dd",{class:"mono"},(r.payment&&r.payment.trackerId)||"—"),
       h("dt",null,"WHT"),h("dd",null,r.wht?(r.wht.applicable||"—")+(r.wht.amount?" · "+tzs(r.wht.amount):""):"—"),
       h("dt",null,"Evidence status"),h("dd",null,r.evidence?pill(r.evidence,r.evidence==="Complete"?"p-ok":"p-warn"):"—"),
@@ -470,7 +559,7 @@ const val=id=>{const el=document.getElementById(id);return el?el.value.trim():""
 function openDlg(title,body,actions){dlg.replaceChildren(h("div",{class:"dh"},h("h2",null,title),h("button",{class:"x","aria-label":"Close",onclick:()=>dlg.close()},"×")),h("div",{class:"db"},body),h("div",{class:"df"},h("button",{class:"btn",onclick:()=>dlg.close()},actions.length?"Cancel":"Close"),...actions));if(!dlg.open)dlg.showModal()}
 function saveBtn(label,fn){const b=h("button",{class:"btn primary",onclick:async()=>{b.disabled=true;try{const ok=await fn();if(ok!==false)dlg.close()}finally{b.disabled=false}}},label);return b}
 const supOptions=()=>Object.values(S.suppliers).sort((a,b)=>a.name.localeCompare(b.name)).map(s=>[s.id,s.name+" ("+s.id+")"+(supplierVerified(s)?"":" · not verified")]);
-const envOptions=cur=>Object.values(S.envelopes).filter(e=>e.status==="Active"||e.id===cur).map(e=>[e.id,e.name+" · "+tzs(envelopeUse(e).left)+" left"]);
+const envOptions=cur=>Object.values(S.envelopes).filter(e=>e.status==="Active"||e.id===cur).map(e=>[e.id,e.name+(e.pre_approved?" · pre-approved":"")+" · "+tzs(envelopeUse(e).left)+" left"]);
 
 function editRequest(id){if(!canWrite())return;const r=id?S.requests[id]:{currency:"TZS",date:today(),quotes:[]};const quotes=(r.quotes||[]).map(x=>Object.assign({},x));
   const qBox=h("div",{style:"display:grid;gap:8px"}),rule=h("div",{class:"rule"});
@@ -481,15 +570,17 @@ function editRequest(id){if(!canWrite())return;const r=id?S.requests[id]:{curren
   function preview(){const t={amount:val("f-amt"),currency:val("f-cur")||"TZS",date:val("f-date")||today(),fxDate:val("f-fxd")};if(!(n0(t.amount)>0)){rule.replaceChildren("Enter the expected cost to see which rules apply.");return}
     const a=amounts(t),b=bandOf(a.tzs,a.usd),kind=val("f-kind");const env=S.envelopes[val("f-env")];const extra=kind.startsWith("Consultant")?" Consultant: signed ToR and contract before work starts, IP assigned to TUSOME, SAF-01 if working with children, withholding tax deducted.":kind.startsWith("Software")?" Subscription: a dated price page counts as the quote; check data-protection terms.":kind.startsWith("Event")?" Events and logistics should sit in the project's logistics plan.":"";
     const envNote=env?" Envelope "+env.name+": "+tzs(envelopeUse(env).left-(id&&r.envelopeId===env.id&&r.submitted?0:(a.tzs||0)))+" left after this.":"";
-    rule.replaceChildren(h("b",null,"Band "+b+": "+bandText(b)),"About "+(a.tzs!=null?tzs(a.tzs):"—")+" / "+(a.usd!=null?money(a.usd,"USD"):"—")+". Needs "+b+" written quotation"+(b>1?"s":"")+" ("+quotes.length+" added). Approval: "+(b===3?"Band 1–2 approver, then Director.":"Band 1–2 approver.")+envNote+extra)}
+    rule.replaceChildren(h("b",null,"Band "+b+": "+bandText(b)),"About "+(a.tzs!=null?tzs(a.tzs):"—")+" / "+(a.usd!=null?money(a.usd,"USD"):"—")+". Needs "+b+" written quotation"+(b>1?"s":"")+" ("+quotes.length+" added). Approval: "+(env&&env.pre_approved&&envelopeUse(env).left>=(a.tzs||0)?"covered by the pre-approved envelope, no separate approval.":b===3?"Band 1–2 approver, then Director.":"Band 1–2 approver.")+envNote+extra)}
   drawQ();
-  const body=h("div",{class:"fg"},field("f-title","What do you need?","text",r.title,{full:true,ph:"e.g. Printing of endline test booklets"}),field("f-purpose","Business purpose","textarea",r.purpose,{full:true}),
-    field("f-proj","Project / client","text",r.project),field("f-env","Envelope (budget)","select",r.envelopeId,{options:envOptions(r.envelopeId),blank:"None"}),field("f-cat","Workplan category","select",r.category,{options:CATS}),field("f-kind","Type of purchase","select",r.kind,{options:KINDS}),
-    field("f-sup","Supplier","select",r.supplierId,{options:supOptions(),blank:"Select supplier…",hint:"Not listed? Add it under Suppliers first."}),
-    field("f-amt","Expected total cost","number",r.amount),field("f-cur","Currency","select",r.currency,{options:["TZS","USD"],blank:false}),
+  const more=h("div",{class:"fg",style:"grid-column:1/-1",hidden:!id});
+  more.append(field("f-purpose","Business purpose","textarea",r.purpose,{full:true}),field("f-proj","Project / client","text",r.project),field("f-cat","Workplan category","select",r.category,{options:CATS}),field("f-kind","Type of purchase","select",r.kind,{options:KINDS}),
     field("f-date","Date raised","date",r.date),field("f-fxd","FX rate date","date",r.fxDate,{hint:"Blank uses the date raised."}),
-    field("f-con","Contract ID (if any)","select",r.contractId,{options:Object.keys(S.contracts),blank:"None"}),field("f-f01","Link to F01 request form","url",r.f01),
-    h("div",{style:"grid-column:1/-1;display:grid;gap:6px"},h("div",{class:"f"},"Quotations"),qBox),field("f-waiver","Quote waiver reason (only if approved)","text",r.waiver,{full:true}),h("div",{style:"grid-column:1/-1"},rule));
+    field("f-con","Contract ID (if any)","select",r.contractId,{options:Object.keys(S.contracts),blank:"None"}),field("f-f01","Link to F01 request form","url",r.f01),field("f-waiver","Quote waiver reason (only if approved)","text",r.waiver,{full:true}));
+  const body=h("div",{class:"fg"},field("f-title","What do you need?","text",r.title,{full:true,ph:"e.g. Printing of endline test booklets"}),
+    field("f-amt","Expected total cost","number",r.amount),field("f-cur","Currency","select",r.currency,{options:["TZS","USD"],blank:false}),
+    field("f-sup","Supplier","select",r.supplierId,{options:supOptions(),blank:"Select supplier…",hint:"Not listed? Add it under Suppliers first."}),field("f-env","Envelope (budget)","select",r.envelopeId,{options:envOptions(r.envelopeId),blank:"None"}),
+    h("div",{style:"grid-column:1/-1"},rule),h("div",{style:"grid-column:1/-1;display:grid;gap:6px"},h("div",{class:"f"},"Quotations"),qBox),
+    h("button",{type:"button",class:"linkbtn",style:"grid-column:1/-1",onclick:e=>{more.hidden=!more.hidden;e.target.textContent=more.hidden?"More details (purpose, project, category, dates, contract)":"Hide details"}},more.hidden?"More details (purpose, project, category, dates, contract)":"Hide details"),more);
   body.addEventListener("input",preview);body.addEventListener("change",preview);
   openDlg(id?"Edit "+id:"New purchase request",body,[saveBtn(id?"Save changes":"Save draft",async()=>{
     const title=val("f-title"),amt=n0(val("f-amt"));if(!title||!(amt>0)){toast("Add what you need and the expected cost.");return false}

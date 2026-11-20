@@ -13,6 +13,9 @@ Staff sign in with their **email (username) and password**. What each person can
 3. `supabase/003_fix_access.sql` — access grants (safe to re-run)
 4. `supabase/004_expenses_envelopes_bank.sql` — envelopes, expense claims, who we owe, bank reconciliation,
    and opening balances owed to staff (from the tracker's Outstanding Reimbursements; verify before paying)
+5. `supabase/005_payments_ledger.sql` — the platform becomes the book of payments: payments ledger (company and personal
+   money), part-repayments, pre-approved envelopes, alternate approver (habari@) for the Director's own items,
+   November 2026 tracker payments imported. Earlier months: Payments > Import from tracker (CSV).
 
 ## Roles
 
