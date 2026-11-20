@@ -71,6 +71,7 @@ function chainState(r){if(r.envelopeCovered)return stepsFor(r).map(step=>({step,
 const approvedAll=r=>chainState(r).every(x=>x.s==="done");
 const rejected=r=>chainState(r).some(x=>x.s==="rej");
 function status(r){
+  if(r.historical)return{k:"paid",t:"Paid · historical",c:"p-ok"};
   if(!r.submitted)return{k:"draft",t:"Draft",c:"p-mute"};
   if(rejected(r))return{k:"rejected",t:"Rejected",c:"p-bad"};
   if(!approvedAll(r)){if(r.payment||reqPayments(r).length)return{k:"paid",t:"Paid without approval",c:"p-bad"};return{k:"approval",t:"Awaiting approval",c:"p-warn"}}
@@ -82,7 +83,7 @@ function supplierVerified(s){return !!(s&&s.tin&&["Yes","No"].includes(s.efd)&&s
 function splitFlag(r){if(!r.supplierId||!r.date)return null;const w=cfg().splitDays*864e5,d0=new Date(r.date);let t=0;
   for(const x of Object.values(S.requests)){if(x.supplierId!==r.supplierId||!x.date||rejected(x))continue;if(Math.abs(new Date(x.date)-d0)<=w){const a=amounts(x).tzs;if(a!=null)t+=a}}
   const rate=amounts(r).rate;return bandOf(t,rate?t/rate:null)>band(r)?t:null}
-function checks(r){const out=[];
+function checks(r){const out=[];if(r.historical)return out;
   if(r.submitted&&quotesState(r)==="Short")out.push(["Quotations short","Band "+band(r)+": "+(r.quotes||[]).length+" of "+band(r)+" quotes on record"]);
   if(r.submitted&&!approvedAll(r)&&!rejected(r)&&(r.payment||r.retro))out.push(["Approval missing","Route: "+stepsFor(r).map(x=>STEP_NAME[x]).join(" then ")]);
   if(r.payment&&!approvedAll(r))out.push(["Paid before approval","Payment recorded without a complete approval chain"]);
@@ -125,7 +126,7 @@ function allExceptions(){const out=[];
   Object.values(S.requests).forEach(r=>checks(r).forEach(([k,d])=>out.push({k,d,ref:r.id,who:(S.suppliers[r.supplierId]||{}).name||"—",amt:amounts(r).tzs,go:()=>openRequest(r.id)})));
   Object.values(S.contracts).forEach(c=>contractChecks(c).forEach(([k,d])=>out.push({k,d,ref:c.id,who:(S.suppliers[c.supplierId]||{}).name||"—",amt:c.currency==="USD"?null:n0(c.value),go:()=>editContract(c.id)})));
   Object.values(S.envelopes).forEach(e=>{if(e.status!=="Active")return;const u=envelopeUse(e);if(u.left<0)out.push({k:"Envelope overspent",d:e.name+": over by "+tzs(-u.left),ref:e.id,who:"—",amt:-u.left,go:()=>go("envelopes")})});
-  Object.values(S.accounts).forEach(a=>{if(a.holder!=="Company"||!["Active","To confirm"].includes(a.status))return;const r=latestRecon(a.id);
+  Object.values(S.accounts).forEach(a=>{if(a.holder!=="Company"||a.status!=="Active")return;const r=latestRecon(a.id);
     if(!r)out.push({k:"Account not reconciled",d:a.name+": no reconciliation recorded",ref:a.id,who:"—",amt:null,go:()=>go("bank")});
     else if(daysSince(r.as_of)>35)out.push({k:"Reconciliation overdue",d:a.name+": last reconciled "+fmtDate(r.as_of),ref:a.id,who:"—",amt:null,go:()=>go("bank")});
     else if(!r.reviewed_by)out.push({k:"Reconciliation awaiting sign-off",d:a.name+" as of "+fmtDate(r.as_of)+", prepared by "+nameOf(r.prepared_by),ref:r.id,who:"—",amt:null,go:()=>go("bank")});});
@@ -588,7 +589,7 @@ function renderSheet(){const root=$("#sheetRoot");if(!sheetFor){root.replaceChil
   const hist=S.audit.filter(x=>x.row_id===r.id||(x.table_name==="approvals"&&(x.new_data||{}).request_id===r.id));
   const link=(u,t)=>u?h("a",{href:u,target:"_blank",rel:"noopener"},t||"Open file"):null;const env=S.envelopes[r.envelopeId];
   const body=h("div",{class:"sh-body"},
-    r.retro?h("div",{class:"banner"},h("b",null,"Retrospective entry. "),r.notes||""):null,
+    r.historical?h("div",{class:"banner info"},h("b",null,"Historical record. "),"Paid before the platform started and treated as approved on import (20 Nov 2026). "+(r.notes||"")):r.retro?h("div",{class:"banner"},h("b",null,"Retrospective entry. "),r.notes||""):null,
     acts.length?h("div",{class:"row"},acts):null,
     ck.length?h("div",{class:"sec"},h("h3",null,"Issues"),h("ul",{class:"small",style:"margin:0;padding-left:18px"},ck.map(c=>h("li",null,h("b",null,c[0]),": "+c[1])))):null,
     h("div",{class:"sec"},h("h3",null,"Approval chain"),h("div",{class:"chain"},

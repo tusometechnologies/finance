@@ -20,6 +20,7 @@ Staff sign in with their **email (username) and password**. What each person can
    read from the tracker file on 20 Nov 2026, all treated as approved. Totals match the tracker's monthly summaries.
 7. `supabase/007_confirm_founders_payer.sql` — notes: Hamis paid the Founders' capital items with no payer named.
 8. `supabase/008_control_panel.sql` — the alternate approver decides only the Director's own items above the threshold.
+9. `supabase/009_clear_historical_exceptions.sql` — marks the two retrospective requests as historical (no exceptions).
 
 ## Roles
 
