@@ -12,6 +12,18 @@ Live web platform published as a claude.ai artifact: https://claude.ai/artifact/
 - Suppliers (F07 verification), contracts (ToR, IP, SAF-01, DATA-02 checks), bank & wallets, exceptions, audit trail.
 - Rules & roles: FX rates (BoT), bands, split window, WHT rates (TRA 2025/26), approver assignment.
 
+## Roles (set 2026-11-20)
+Roles are assigned by email and matched to the claude.ai account email:
+- Director (Band 3, above USD 1,000): hamis@tusome.ac.tz
+- Band 1-2 approver (either): asnes@tusome.ac.tz, joseph@tusome.ac.tz
+- Finance custodian: finance@tusome.ac.tz (Amriya)
+
+The platform is the live procurement register from 2026-11-20. The Google Sheet control register is the archive.
+
+## Hosting
+Capabilities (database, sign-in) only run inside claude.ai. A custom domain such as finance.tusome.ac.tz can
+redirect to the artifact URL; a standalone deployment would need its own backend and login.
+
 ## Data and access
 Database rules (enforced by the platform, not the page):
 | Path | Read | Write |

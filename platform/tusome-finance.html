@@ -174,12 +174,13 @@ const CON_TYPES = ["Supply of goods","Service","Consultancy","Software / subscri
 const CON_STATUS = ["Draft","Active","Completed","Expired","Terminated"];
 const ACC_TYPES = ["Bank account","Mobile-money wallet","Payment gateway","Petty cash","Card"];
 const ACC_STATUS = ["Active","Dormant","Closed","To confirm","Personal account used for company payments"];
-const ROLE_LABEL = {ID:"Independent Director", DIR:"Director"};
+const ROLE_LABEL = {ID:"Band 1–2 approver (Independent Director)", DIR:"Director (Band 3, above USD threshold)", CUS:"Finance custodian"};
+const ROLE_SHORT = {ID:"Independent Director", DIR:"Director", CUS:"Finance custodian"};
 const VIEWS = [["today","Today"],["requests","Purchase requests"],["suppliers","Suppliers"],["contracts","Contracts"],["exceptions","Exceptions"],["accounts","Bank & wallets"],["audit","Audit trail"],["setup","Rules & roles"]];
 
 /* ============ state ============ */
 const S = {db:null,user:null,me:{id:null,name:"",email:null,canEdit:false,isOwner:false},canWrite:false,domainOk:true,
-  settings:null,requests:{},suppliers:{},contracts:{},accounts:{},approvals:{},audit:{},names:{},
+  settings:null,emails:{},requests:{},suppliers:{},contracts:{},accounts:{},approvals:{},audit:{},names:{},
   loaded:{settings:false,requests:false},stale:false,offline:false};
 let view="today", tab="all", q="", sheetFor=null, dirtyNames=false;
 const subs={appr:{},aud:{}};
@@ -200,9 +201,8 @@ function nameOf(id){if(!id)return "—";const n=S.names[id];if(n===undefined){di
 async function resolveNames(){if(!S.user||!dirtyNames)return;dirtyNames=false;const ids=new Set();
   Object.values(S.requests).forEach(r=>{r.requester&&ids.add(r.requester);r.payment?.by&&ids.add(r.payment.by)});
   Object.values(S.approvals).forEach(a=>ids.add(a.by));Object.values(S.audit).forEach(a=>ids.add(a.by));
-  const R=S.settings?.roles||{};Object.values(R).forEach(v=>v&&ids.add(v));
   const list=[...ids].filter(Boolean);if(!list.length)return;
-  try{const ps=await S.user.profiles(list);let ch=false;for(const id of list){const nm=ps[id]?.name||"";if(S.names[id]!==nm){S.names[id]=nm;ch=true}}if(ch)render()}catch(e){}}
+  try{const ps=await S.user.profiles(list);let ch=false;for(const id of list){const nm=ps[id]?.name||"";const em=ps[id]?.email||null;if(S.names[id]!==nm){S.names[id]=nm;ch=true}if(S.emails[id]!==em){S.emails[id]=em;ch=true}}if(ch)render()}catch(e){}}
 
 /* ============ policy engine ============ */
 function cfg(){return S.settings||{fxRates:[],band1Tzs:500000,thresholdUsd:1000,splitDays:30,policyDate:"2026-11-04",contractWarnDays:30,roles:{},wht:[]}}
@@ -216,8 +216,12 @@ function stepsFor(r){return band(r)===3?["ID","DIR"]:["ID"]}
 function prePolicy(r){return (r.date||"")<(cfg().policyDate||"")}
 function quotesState(r){if(prePolicy(r))return"Pre-policy";const need=band(r);return ((r.quotes||[]).length>=need||!!r.waiver)?"OK":"Short"}
 function apprKey(reqId,rev,role){return reqId+"__"+rev+"__"+role}
-function validApprover(role,uid){const c=cfg();return !!uid&&((c.roles||{})[role]===uid||((c.roleHistory||{})[role]||[]).includes(uid))}
-function decisionFor(r,role){const d=S.approvals[apprKey(r.id,r.rev||1,role)];return d&&d.by!==r.requester&&validApprover(role,d.by)?d:null}
+function roleList(role){const v=(cfg().roleEmails||{})[role];return (Array.isArray(v)?v:[]).map(x=>String(x).toLowerCase())}
+function roleHist(role){const v=(cfg().roleEmailHistory||{})[role];return (Array.isArray(v)?v:[]).map(x=>String(x).toLowerCase())}
+function emailOf(uid){if(!uid)return null;if(uid===S.me.id&&S.me.email)return S.me.email.toLowerCase();const e=S.emails[uid];return e?e.toLowerCase():null}
+function hasRole(role,uid){const e=emailOf(uid);return !!e&&roleList(role).includes(e)}
+function validApprover(role,uid,d){let e=emailOf(uid);if(!e&&d&&d.email&&S.names[uid]!==undefined&&S.emails[uid]===null)e=String(d.email).toLowerCase();return !!e&&(roleList(role).includes(e)||roleHist(role).includes(e))}
+function decisionFor(r,role){const d=S.approvals[apprKey(r.id,r.rev||1,role)];return d&&d.by!==r.requester&&validApprover(role,d.by,d)?d:null}
 function chainState(r){const st=stepsFor(r);let out=[];let blocked=false;
   for(const role of st){const d=decisionFor(r,role);let s="pending";if(d)s=d.decision==="Approved"?"done":"rej";else if(!blocked&&r.submitted)s="now";if(s!=="done")blocked=true;out.push({role,dec:d,s})}
   return out}
@@ -237,7 +241,7 @@ function supplierTotalInWindow(r){if(!r.supplierId||!r.date)return null;const w=
 function splitFlag(r){const t=supplierTotalInWindow(r);if(t==null)return null;const a=amounts(r);const rate=a.rate;const bAgg=bandOf(t,rate?t/rate:null);return bAgg>band(r)?t:null}
 function checks(r){const out=[];const st=status(r);
   if(r.submitted&&quotesState(r)==="Short")out.push(["Quotations short","Band "+band(r)+": "+(r.quotes||[]).length+" of "+band(r)+" quotes on record"]);
-  if(r.submitted&&!approvedAll(r)&&!rejected(r)&&(r.payment||r.retro))out.push(["Approval missing","Route: "+stepsFor(r).map(x=>ROLE_LABEL[x]).join(" then ")]);
+  if(r.submitted&&!approvedAll(r)&&!rejected(r)&&(r.payment||r.retro))out.push(["Approval missing","Route: "+stepsFor(r).map(x=>ROLE_SHORT[x]).join(" then ")]);
   if(r.payment&&!approvedAll(r))out.push(["Paid before approval","Payment recorded without a complete approval chain"]);
   const sp=splitFlag(r);if(sp!=null)out.push(["Possible split purchase","Supplier total within "+cfg().splitDays+" days: "+tzs(sp)]);
   const s=S.suppliers[r.supplierId];if(r.submitted&&!supplierVerified(s))out.push(["Supplier not F07 verified",s?s.name:"No supplier selected"]);
@@ -253,10 +257,10 @@ function allExceptions(){const out=[];
   Object.values(S.requests).forEach(r=>checks(r).forEach(([k,d])=>out.push({k,d,ref:r.id,who:S.suppliers[r.supplierId]?.name||"—",amt:amounts(r).tzs,go:()=>openRequest(r.id)})));
   Object.values(S.contracts).forEach(c=>contractChecks(c).forEach(([k,d])=>out.push({k,d,ref:c.id,who:S.suppliers[c.supplierId]?.name||"—",amt:c.currency==="USD"?null:n0(c.value),go:()=>editContract(c.id)})));
   const fx=fxFor(today());if(!fx||fx.status==="Placeholder")out.push({k:"FX rate not confirmed",d:"Add the current Bank of Tanzania rate",ref:"Rules",who:"—",amt:null,go:()=>go("setup")});
-  if(!cfg().roles?.ID||!cfg().roles?.DIR)out.push({k:"Approvers not assigned",d:"Assign the Independent Director and Director",ref:"Rules",who:"—",amt:null,go:()=>go("setup")});
+  if(!roleList("ID").length||!roleList("DIR").length)out.push({k:"Approvers not assigned",d:"Assign the Independent Director and Director",ref:"Rules",who:"—",amt:null,go:()=>go("setup")});
   return out}
-function myPending(){const me=S.me.id;if(!me)return[];const R=cfg().roles||{};
-  return Object.values(S.requests).filter(r=>{if(!r.submitted||rejected(r))return false;const now=chainState(r).find(x=>x.s==="now");return now&&R[now.role]===me&&r.requester!==me})}
+function myPending(){const me=S.me.id;if(!me)return[];
+  return Object.values(S.requests).filter(r=>{if(!r.submitted||rejected(r))return false;const now=chainState(r).find(x=>x.s==="now");return now&&hasRole(now.role,me)&&r.requester!==me})}
 
 /* ============ data access ============ */
 function writable(){return S.db&&S.canWrite&&S.domainOk&&S.me.id}
@@ -283,7 +287,7 @@ function renderNav(){const pend=myPending().length,exc=allExceptions().length;
   $("#nav").replaceChildren(...mk());$("#mobnav").replaceChildren(...mk());
   const who=$("#who");const role=roleNames(S.me.id);
   who.replaceChildren(S.me.id?h("div",null,h("b",null,S.me.name||"Signed in"),S.me.email||"",h("div",null,role||(S.canWrite?"Contributor":"Read-only")),!S.domainOk?h("div",{style:"color:var(--bad)"},"Not a TUSOME address: read-only"):null):h("div",null,S.db?"Signed in":"Sign in to claude.ai to use the platform."))}
-function roleNames(id){if(!id)return"";const R=cfg().roles||{};const l=[];if(R.DIR===id)l.push("Director");if(R.ID===id)l.push("Independent Director");if(R.CUS===id)l.push("Finance custodian");if(S.me.isOwner)l.push("Owner");return l.join(" · ")}
+function roleNames(id){if(!id)return"";const l=[];["DIR","ID","CUS"].forEach(k=>{if(hasRole(k,id))l.push(ROLE_SHORT[k])});if(S.me.isOwner)l.push("Owner");return l.join(" · ")}
 
 /* ============ views ============ */
 function render(){renderNav();const v=$("#view");const parts=[];
@@ -369,8 +373,8 @@ function vSetup(){const c=cfg();const admin=writable()&&S.me.canEdit;const R=c.r
   return [header("Rules & roles","These settings drive every calculation. Only Editors (the Director) can change them, and each change is logged.",admin?h("button",{class:"btn",onclick:editRules},"Edit thresholds"):null),
     h("div",{class:"grid2"},
       h("section",{class:"panel"},h("div",{class:"ph"},h("h2",null,"Approvers"),admin?h("button",{class:"btn sm",onclick:editRoles},"Assign"):null),
-        h("div",{style:"padding:12px 16px"},h("dl",null,h("dt",null,"Director"),h("dd",null,R.DIR?nameOf(R.DIR):pill("Not assigned","p-bad")),h("dt",null,"Independent Director"),h("dd",null,R.ID?nameOf(R.ID):pill("Not assigned","p-bad")),h("dt",null,"Finance custodian"),h("dd",null,R.CUS?nameOf(R.CUS):pill("Not assigned","p-warn"))),
-          h("p",{class:"small muted",style:"margin:10px 0 0"},"Band 1 and 2 need the Independent Director. Band 3 needs the Independent Director, then the Director. Nobody approves their own request."))),
+        h("div",{style:"padding:12px 16px"},h("dl",null,...["DIR","ID","CUS"].flatMap(k=>[h("dt",null,ROLE_SHORT[k]),h("dd",null,roleList(k).length?roleList(k).join(", "):pill("Not assigned",k==="CUS"?"p-warn":"p-bad"))])),
+          h("p",{class:"small muted",style:"margin:10px 0 0"},"Band 1 and 2: any one Band 1–2 approver. Band 3: a Band 1–2 approver, then the Director. Nobody approves their own request. People are matched by the email on their claude.ai account."))),
       h("section",{class:"panel"},h("div",{class:"ph"},h("h2",null,"Quotation bands")),
         h("div",{class:"tbl"},h("table",null,h("thead",null,h("tr",null,["Band","Applies to","Quotes","Approval"].map(t=>h("th",null,t)))),h("tbody",null,[1,2,3].map(n=>h("tr",null,h("td",null,n),h("td",null,bandText(n)),h("td",null,n),h("td",null,n===3?"Independent Director, then Director":"Independent Director")))))),
         h("div",{class:"small muted",style:"padding:10px 16px"},"Split-purchase window: "+c.splitDays+" days · Policy start: "+fmtDate(c.policyDate)+" · Contract warning: "+c.contractWarnDays+" days"))),
@@ -389,7 +393,7 @@ function renderSheet(){const root=$("#sheetRoot");if(!sheetFor){root.replaceChil
   if(canW&&!r.submitted){acts.push(h("button",{class:"btn",onclick:()=>editRequest(r.id)},"Edit"));acts.push(h("button",{class:"btn primary",onclick:()=>submitReq(r)},"Submit for approval"))}
   if(canW&&r.submitted&&!approvedAll(r)&&!r.payment)acts.push(h("button",{class:"btn",onclick:()=>recallReq(r)},rejected(r)?"Revise and resubmit":"Recall to draft"));
   const now=ch.find(x=>x.s==="now");
-  if(canW&&now&&R[now.role]===me&&!isReq){acts.push(h("button",{class:"btn ok",onclick:()=>decide(r,now.role,"Approved")},"Approve"));acts.push(h("button",{class:"btn danger",onclick:()=>decide(r,now.role,"Rejected")},"Reject"))}
+  if(canW&&now&&hasRole(now.role,me)&&!isReq){acts.push(h("button",{class:"btn ok",onclick:()=>decide(r,now.role,"Approved")},"Approve"));acts.push(h("button",{class:"btn danger",onclick:()=>decide(r,now.role,"Rejected")},"Reject"))}
   if(canW&&approvedAll(r)&&!r.delivery)acts.push(h("button",{class:"btn primary",onclick:()=>recordDelivery(r)},"Confirm delivery (F08)"));
   if(canW&&approvedAll(r)&&r.delivery&&!r.invoice)acts.push(h("button",{class:"btn primary",onclick:()=>recordInvoice(r)},"Record invoice"));
   if(canW&&r.invoice&&!r.payment&&approvedAll(r))acts.push(h("button",{class:"btn primary",onclick:()=>recordPayment(r)},"Record payment"));
@@ -401,7 +405,7 @@ function renderSheet(){const root=$("#sheetRoot");if(!sheetFor){root.replaceChil
     ck.length?h("div",{class:"sec"},h("h3",null,"Issues"),h("div",{class:"flags"},ck.map(c=>h("span",{class:"pill p-bad",title:c[1]},c[0]))),h("ul",{class:"small",style:"margin:6px 0 0;padding-left:18px"},ck.map(c=>h("li",null,c[0]+": "+c[1])))):null,
     h("div",{class:"sec"},h("h3",null,"Approval chain"),h("div",{class:"chain"},
       h("div",{class:"step done"},h("div",{class:"dot"},"✓"),h("div",null,h("div",{class:"st"},"Raised by "+nameOf(r.requester)),h("div",{class:"small muted"},fmtDate(r.date)+(r.submittedAt?" · submitted "+fmtTime(r.submittedAt):" · not submitted")+(r.rev>1?" · revision "+r.rev:"")))),
-      ch.map(x=>h("div",{class:"step "+(x.s==="done"?"done":x.s==="rej"?"rej":x.s==="now"?"now":"")},h("div",{class:"dot"},x.s==="done"?"✓":x.s==="rej"?"✕":""),h("div",null,h("div",{class:"st"},ROLE_LABEL[x.role]+(R[x.role]?" · "+nameOf(R[x.role]):" · not assigned")),
+      ch.map(x=>h("div",{class:"step "+(x.s==="done"?"done":x.s==="rej"?"rej":x.s==="now"?"now":"")},h("div",{class:"dot"},x.s==="done"?"✓":x.s==="rej"?"✕":""),h("div",null,h("div",{class:"st"},ROLE_SHORT[x.role]+" · "+(roleList(x.role).length?roleList(x.role).join(" or "):"not assigned")),
         h("div",{class:"small muted"},x.dec?(x.dec.decision+" by "+nameOf(x.dec.by)+" on "+fmtTime(x.dec.at)):x.s==="now"?"Waiting for decision":"Not yet reached"),x.dec&&x.dec.comment?h("div",{class:"small"},"“"+x.dec.comment+"”"):null))))),
     h("div",{class:"sec"},h("h3",null,"Request"),h("dl",null,
       h("dt",null,"Item"),h("dd",null,r.title||"—"),h("dt",null,"Purpose"),h("dd",null,r.purpose||"—"),h("dt",null,"Project / client"),h("dd",null,r.project||"—"),h("dt",null,"Category"),h("dd",null,r.category||"—"),h("dt",null,"Type"),h("dd",null,r.kind||"—"),
@@ -466,7 +470,7 @@ function editRequest(id){if(!writable())return;const r=id?S.requests[id]:{curren
     await guard(async()=>{if(id){await S.db.doc("requests/"+id).update(data);await audit("Edited","request",id,data.title+" · "+money(data.amount,data.currency))}
       else{const no=await nextNumber("prq","PRQ-"+new Date().getFullYear()+"-",3);await S.db.doc("requests/"+no).set(Object.assign(data,{id:no,requester:S.me.id,rev:1,submitted:false,createdAt:nowIso()}));await audit("Created","request",no,data.title+" · "+money(data.amount,data.currency));openRequest(no)}},id?"Saved":"Draft saved")})]);preview()}
 
-async function submitReq(r){const R=cfg().roles||{};if(!R.ID){toast("Ask the Director to assign the Independent Director under Rules & roles first.");return}
+async function submitReq(r){if(!roleList("ID").length){toast("Ask the Director to assign the Band 1–2 approvers under Rules & roles first.");return}
   if(!r.supplierId){toast("Choose a supplier before submitting.");return}
   if(quotesState(r)==="Short"){toast("Band "+band(r)+" needs "+band(r)+" quotations, or an approved waiver reason.");return}
   await guard(async()=>{await S.db.doc("requests/"+r.id).update({submitted:true,submittedAt:nowIso()});await audit("Submitted for approval","request",r.id,"Band "+band(r)+" · "+money(r.amount,r.currency)+" · revision "+(r.rev||1))},"Submitted for approval")}
@@ -474,10 +478,10 @@ async function recallReq(r){await guard(async()=>{await S.db.doc("requests/"+r.i
 function decide(r,role,decision){const body=h("div",{style:"display:grid;gap:10px"},h("div",{class:"rule"},h("b",null,r.id+" · "+(r.title||"")),money(r.amount,r.currency)+" · Band "+band(r)+" · "+(S.suppliers[r.supplierId]?.name||"no supplier")),
   checks(r).length?h("div",{class:"banner"},"Open issues: "+checks(r).map(c=>c[0]).join(", ")):null,
   field("d-c",decision==="Rejected"?"Reason for rejection (required)":"Comment (optional)","textarea","",{rows:3}));
-  openDlg((decision==="Approved"?"Approve as ":"Reject as ")+ROLE_LABEL[role],body,[saveBtn(decision==="Approved"?"Approve":"Reject",async()=>{const c=val("d-c");if(decision==="Rejected"&&!c){toast("Give a reason so the requester can fix it.");return false}
+  openDlg((decision==="Approved"?"Approve as ":"Reject as ")+ROLE_SHORT[role],body,[saveBtn(decision==="Approved"?"Approve":"Reject",async()=>{const c=val("d-c");if(decision==="Rejected"&&!c){toast("Give a reason so the requester can fix it.");return false}
     await guard(async()=>{const me=S.me.id;if(!S._apprIdx){await S.db.doc("approvals/"+me).set({since:nowIso()});S._apprIdx=true}
-      await S.db.doc("approvals/"+me+"/d/"+apprKey(r.id,r.rev||1,role)).set({reqId:r.id,rev:r.rev||1,role,decision,comment:c,by:me,at:nowIso(),amount:n0(r.amount),currency:r.currency,amountTzs:amounts(r).tzs});
-      await audit(decision,"request",r.id,ROLE_LABEL[role]+(c?": "+c:""))},decision==="Approved"?"Approved":"Rejected")})])}
+      await S.db.doc("approvals/"+me+"/d/"+apprKey(r.id,r.rev||1,role)).set({reqId:r.id,rev:r.rev||1,role,decision,comment:c,by:me,email:S.me.email||"",at:nowIso(),amount:n0(r.amount),currency:r.currency,amountTzs:amounts(r).tzs});
+      await audit(decision,"request",r.id,ROLE_SHORT[role]+(c?": "+c:""))},decision==="Approved"?"Approved":"Rejected")})])}
 function recordDelivery(r){openDlg("Confirm delivery (F08)",h("div",{class:"fg"},field("v-d","Date delivered","date",today()),field("v-l","Link to signed F08","url",""),field("v-n","Note","text","",{full:true})),[saveBtn("Confirm delivery",async()=>{
   await guard(async()=>{await S.db.doc("requests/"+r.id).update({delivery:{date:val("v-d")||today(),link:val("v-l"),note:val("v-n"),by:S.me.id}});await audit("Delivery confirmed","request",r.id,"F08 "+(val("v-l")?"attached":"not attached"))},"Delivery confirmed")})])}
 function recordInvoice(r){openDlg("Record invoice",h("div",{class:"fg"},field("i-no","Invoice number","text",""),field("i-amt","Invoice amount ("+r.currency+")","number",r.amount),field("i-l","Link to invoice","url",""),field("i-f","Fiscal receipt (EFD/VFD)","select","Not checked",{options:FISCAL,blank:false})),[saveBtn("Save invoice",async()=>{
@@ -526,15 +530,13 @@ function editRules(){const c=cfg();openDlg("Thresholds",h("div",{class:"fg"},fie
   [saveBtn("Save",async()=>{const p={band1Tzs:n0(val("r-b1")),thresholdUsd:n0(val("r-th")),splitDays:n0(val("r-sw")),policyDate:val("r-pd"),contractWarnDays:n0(val("r-cw"))};await saveSettings(p,"Thresholds changed","Band 2 from "+tzs(p.band1Tzs)+"; Director above USD "+p.thresholdUsd+"; split window "+p.splitDays+" days")})])}
 function addRate(){openDlg("Add approval FX rate",h("div",{class:"fg"},field("x-d","Effective date","date",today()),field("x-r","TZS per USD","number",""),field("x-s","Status","select","BoT mean rate",{options:["BoT mean rate","Confirmed by accountant","Placeholder"],blank:false}),field("x-src","Source","text","Bank of Tanzania mean rate, https://www.bot.go.tz/ExchangeRate/excRates",{full:true})),
   [saveBtn("Add rate",async()=>{const rate=n0(val("x-r"));if(!(rate>0)){toast("Enter the rate.");return false}const list=(cfg().fxRates||[]).filter(x=>x.date!==val("x-d"));list.push({date:val("x-d"),rate,status:val("x-s"),source:val("x-src")});await saveSettings({fxRates:list},"FX rate added","TZS "+rate+" per USD from "+val("x-d"))})])}
-function editRoles(){const R=Object.assign({},cfg().roles||{});const body=h("div",{style:"display:grid;gap:14px"},h("p",{class:"small muted",style:"margin:0"},"Search your TUSOME organisation by name or email. Each person also needs the right access on this page: approvers at Contributor or above, the Director as Editor."),
-  ...[["DIR","Director"],["ID","Independent Director"],["CUS","Finance custodian"]].map(([k,l])=>personPicker(k,l,R)));
-  openDlg("Assign approvers",body,[saveBtn("Save approvers",async()=>{if(R.ID&&R.DIR&&R.ID===R.DIR){toast("The Director and Independent Director must be different people.");return false}
-    const prev=cfg().roles||{};const hist=JSON.parse(JSON.stringify(cfg().roleHistory||{}));for(const k of ["ID","DIR","CUS"]){if(prev[k]&&prev[k]!==R[k]){hist[k]=hist[k]||[];if(!hist[k].includes(prev[k]))hist[k].push(prev[k])}}
-    await saveSettings({roles:R,roleHistory:hist},"Approvers assigned","Director: "+nameOf(R.DIR)+"; Independent Director: "+nameOf(R.ID)+"; Custodian: "+nameOf(R.CUS))})])}
-function personPicker(key,label,R){const cur=h("div",{class:"small"},R[key]?nameOf(R[key]):"Not assigned");const menu=h("div",{class:"menu",hidden:true});
-  const inp=h("input",{type:"search",placeholder:"Search name or email","aria-label":label,onfocus:()=>run(""),oninput:e=>run(e.target.value),onblur:()=>setTimeout(()=>menu.hidden=true,200)});
-  async function run(qs){if(!S.user)return;const hits=await S.user.search(qs);menu.replaceChildren(...(hits.length?hits.map(p=>h("button",{type:"button",onmousedown:()=>{R[key]=p.id;S.names[p.id]=p.name;cur.textContent=p.name+(p.email?" · "+p.email:"");inp.value="";menu.hidden=true}},p.name+(p.email?" · "+p.email:""))):[h("div",{class:"small muted",style:"padding:8px 10px"},"No match")]));menu.hidden=false}
-  return h("div",{class:"f"},label,cur,h("div",{class:"picker"},inp,menu),R[key]?h("button",{class:"btn sm",type:"button",onclick:()=>{R[key]="";cur.textContent="Not assigned"}},"Clear"):null)}
+function editRoles(){const body=h("div",{class:"fg"},h("p",{class:"small muted",style:"grid-column:1/-1;margin:0"},"Enter TUSOME email addresses, separated by commas. Anyone listed can act in that role. Each person signs in to claude.ai with that address and needs Contributor access (the Director: Editor)."),
+  field("ro-DIR",ROLE_LABEL.DIR,"text",roleList("DIR").join(", "),{full:true}),field("ro-ID",ROLE_LABEL.ID,"text",roleList("ID").join(", "),{full:true,hint:"Either person can approve. Nobody approves their own request."}),field("ro-CUS",ROLE_LABEL.CUS,"text",roleList("CUS").join(", "),{full:true}));
+  openDlg("Assign roles",body,[saveBtn("Save roles",async()=>{const out={};for(const k of ["DIR","ID","CUS"]){const list=val("ro-"+k).split(/[,;\s]+/).map(x=>x.trim().toLowerCase()).filter(Boolean);
+      const bad=list.filter(e=>!new RegExp("^[^@\\s]+@"+DOMAIN.replace(/\./g,"\\.")+"$").test(e));if(bad.length){toast("Use @"+DOMAIN+" addresses only: "+bad.join(", "));return false}out[k]=[...new Set(list)]}
+    if(!out.ID.length||!out.DIR.length){toast("Assign at least one Band 1–2 approver and one Director.");return false}
+    const hist=JSON.parse(JSON.stringify(cfg().roleEmailHistory||{}));for(const k of ["DIR","ID","CUS"]){roleList(k).forEach(e=>{if(!out[k].includes(e)){hist[k]=hist[k]||[];if(!hist[k].includes(e))hist[k].push(e)}})}
+    await saveSettings({roleEmails:out,roleEmailHistory:hist},"Roles assigned","Director: "+out.DIR.join(", ")+"; Band 1–2: "+out.ID.join(", ")+"; Custodian: "+(out.CUS.join(", ")||"none"))})])}
 
 /* ============ boot ============ */
 render();
