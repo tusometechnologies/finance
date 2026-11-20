@@ -18,6 +18,8 @@ Staff sign in with their **email (username) and password**. What each person can
    November 2026 tracker payments imported. Earlier months: Payments > Import from tracker (CSV).
 6. `supabase/006_import_tracker_oct_nov.sql` — all 135 tracker payments from October 2026 onwards (Oct 78, Nov 57),
    read from the tracker file on 20 Nov 2026, all treated as approved. Totals match the tracker's monthly summaries.
+7. `supabase/007_confirm_founders_payer.sql` — notes: Hamis paid the Founders' capital items with no payer named.
+8. `supabase/008_control_panel.sql` — the alternate approver decides only the Director's own items above the threshold.
 
 ## Roles
 

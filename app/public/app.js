@@ -104,7 +104,7 @@ function envelopeUse(e){let req=0,cl=0;const items=[];
 const isDirector=e=>((S.members[e]||{}).roles||[]).includes("director");
 function payNeedsDirector(p){const a=amounts(p);return a.usd!=null&&a.usd>cfg().thresholdUsd}
 function canDecidePayment(p){if(p.status!=="Submitted"||p.payer===S.email||p.recorded_by===S.email)return false;
-  if(payNeedsDirector(p))return (isDirector(p.payer)||isDirector(p.recorded_by))?hasAny(["alt_director","director"]):hasRole("director");return hasAny(["approver","director","alt_director"])}
+  if(payNeedsDirector(p))return (isDirector(p.payer)||isDirector(p.recorded_by))?hasAny(["alt_director","director"]):hasRole("director");return hasAny(["approver","director"])}
 const PAY_PILL={Submitted:"p-warn",Approved:"p-ok",Rejected:"p-bad"};
 const PAY_LABEL={Submitted:"Awaiting approval",Approved:"Approved",Rejected:"Rejected"};
 function paidFrom(p){return p.funding==="Personal"?"Personal · "+nameOf(p.payer):((S.accounts[p.account_id]||{}).name||"Company")}
@@ -221,12 +221,81 @@ function vToday(){const reqs=Object.values(S.requests),pend=myPending(),cd=myCla
   const myOwed=owedByPerson().find(p=>p.who===me);const exc=allExceptions(),fx=fxFor(today());const first=((S.member&&S.member.full_name)||"").split(" ")[0];
   return [header("Habari"+(first?", "+first:""),"What needs your attention today.",newBtn("Record a payment",()=>editPayment()),newBtn("New purchase request",()=>editRequest())),
     h("div",{class:"tiles"},tile(pend.length+cd.length,"Waiting for your approval"),tile(toPay.length,"Approved, awaiting payment",()=>{tab="payment";go("requests")}),
-      tile(fmtByCur(myOwed?myOwed.owed:{}),"TUSOME owes you",()=>go("owed")),tile(tzs(spendRows(new Date().toISOString().slice(0,7)).reduce((t,p)=>t+(toTzs(p.amount,p.currency,p.date)||0),0)),"Spent this month",()=>{month=new Date().toISOString().slice(0,7);go("spending")}),tile(fmtByCur(cashPosition()),"Cash per latest statements",()=>go("bank")),
-      tile(exc.length,"Open exceptions",()=>go("exceptions")),tile(fx?Number(fx.rate).toLocaleString("en-GB",{maximumFractionDigits:2}):"—","TZS per USD"+(fx?" · "+fmtDate(fx.date):""))),
-    h("div",{class:"grid2"},h("section",{class:"panel"},h("div",{class:"ph"},h("h2",null,"Your approvals")),
-        (pend.length||cd.length)?h("div",{class:"list"},reqItems(pend),claimItems(cd)):empty("Nothing waiting for you. Requests and payments appear here when it is your turn.")),
+      tile(fmtByCur(myOwed?myOwed.owed:{}),"TUSOME owes you",()=>go("owed")),
+      isOversight()?null:tile(tzs(spendRows(curMonth()).reduce((t,p)=>t+(toTzs(p.amount,p.currency,p.date)||0),0)),"Spent this month",()=>{month=curMonth();go("spending")}),
+      isOversight()?null:tile(exc.length,"Open exceptions",()=>go("exceptions"))),
+    (isOversight()&&!pend.length&&!cd.length&&!mine.length)?null:h("div",{class:"grid2"},h("section",{class:"panel"},h("div",{class:"ph"},h("h2",null,"Your approvals")),
+        (pend.length||cd.length)?h("div",{class:"list"},reqItems(pend.slice(0,6)),claimItems(cd.slice(0,Math.max(0,6-pend.length))),pend.length+cd.length>6?h("a",{href:"#payments",class:"li",style:"text-decoration:none",onclick:()=>{ptab="decide"}},h("span",{class:"t"},"View all "+(pend.length+cd.length)+" waiting for you"),""):null):empty("Nothing waiting for you. Requests and payments appear here when it is your turn.")),
       h("section",{class:"panel"},h("div",{class:"ph"},h("h2",null,"Your open requests")),mine.length?h("div",{class:"list"},reqItems(mine)):empty("You have no open requests."))),
-    h("section",{class:"panel"},h("div",{class:"ph"},h("h2",null,"Exceptions"),h("a",{href:"#exceptions",class:"small"},"View all")),excTable(exc.slice(0,6)))]}
+    ...(isOversight()?vAdminPanel():[h("section",{class:"panel"},h("div",{class:"ph"},h("h2",null,"Exceptions"),h("a",{href:"#exceptions",class:"small"},"View all")),excTable(exc.slice(0,6)))])]}
+/* ---- control panel for oversight roles (admin, Director, alternate, auditor) ---- */
+const isOversight=()=>hasAny(["admin","director","alt_director","auditor"]);
+const curMonth=()=>new Date().toISOString().slice(0,7);
+function monthsBack(n,from){const out=[];const d=new Date((from||curMonth())+"-01T00:00:00");for(let i=n-1;i>=0;i--){const x=new Date(d.getFullYear(),d.getMonth()-i,1);out.push(x.getFullYear()+"-"+String(x.getMonth()+1).padStart(2,"0"))}return out}
+const sumTzs=rows=>rows.reduce((t,p)=>t+(toTzs(p.amount,p.currency,p.date)||0),0);
+const pct=(a,b)=>b?Math.round(a/b*100)+"%":"—";
+function kv(k,v,onclick){return h("div",{class:"kv",style:"padding:7px 0;border-bottom:1px solid var(--line)"+(onclick?";cursor:pointer":""),onclick},h("span",null,k),h("span",{class:"num",style:"font-weight:700;color:var(--ink);text-align:right"},v))}
+function panel(title,link,...kids){return h("section",{class:"panel"},h("div",{class:"ph"},h("h2",null,title),link?h("a",{href:"#"+link[0],class:"small"},link[1]):null),h("div",{style:"padding:6px 16px 14px"},...kids))}
+function vAdminPanel(){const m=curMonth(),prev=monthsBack(2)[0];const rows=spendRows(m),prevRows=spendRows(prev);const total=sumTzs(rows),prevTotal=sumTzs(prevRows);
+  const allPays=Object.values(S.payments).filter(p=>p.status!=="Rejected"&&!p.opening);const sinceOct=sumTzs(allPays.filter(p=>p.date>="2026-10-01"));
+  const personal=sumTzs(rows.filter(p=>p.funding==="Personal"));
+  const owed=owedByPerson();const owedTotal={};owed.forEach(p=>Object.entries(p.owed).forEach(([c,v])=>{if(v>0)owedTotal[c]=(owedTotal[c]||0)+v}));
+  const envs=Object.values(S.envelopes).filter(e=>e.status==="Active");const envU=envs.map(e=>envelopeUse(e));
+  const envBudget=envU.reduce((t,u)=>t+(u.budget||0),0),envUsed=envU.reduce((t,u)=>t+u.used,0),envOver=envU.filter(u=>u.left<0).length;
+  const waitPays=Object.values(S.payments).filter(p=>p.status==="Submitted");const waitReqs=Object.values(S.requests).filter(r=>status(r).k==="approval");
+  const oldest=waitPays.map(p=>daysSince(p.recorded_at||p.date)).concat(waitReqs.map(r=>daysSince(r.submittedAt||r.date))).filter(x=>x!=null).sort((a,b)=>b-a)[0];
+  const awaitingPay=Object.values(S.requests).filter(r=>status(r).k==="payment");
+  const rejectedM=Object.values(S.payments).filter(p=>p.status==="Rejected"&&monthOf(p.date)===m).length;
+  const withRec=rows.filter(p=>/^https?:/.test(p.receipt_link||"")).length;const comp=rows.filter(p=>p.funding==="Company");const fisOk=comp.filter(p=>["Verified","Exception approved"].includes(p.fiscal)).length;
+  const exc=allExceptions();const excBy={};exc.forEach(e=>excBy[e.k]=(excBy[e.k]||0)+1);
+  const fx=fxFor(today());const fxAge=fx?daysSince(fx.date):null;
+  const accs=Object.values(S.accounts).filter(a=>a.holder==="Company");
+  /* who is holding approvals */
+  const holders={};waitPays.forEach(p=>{const who=payNeedsDirector(p)?((isDirector(p.payer)||isDirector(p.recorded_by))?"Alternate (habari@)":"Director"):"Band 1–2 approvers";holders[who]=(holders[who]||0)+1});
+  waitReqs.forEach(r=>{const now=chainState(r).find(x=>x.s==="now");const who=now?(now.step==="DIR"?(isDirector(r.requester)?"Alternate (habari@)":"Director"):"Band 1–2 approvers"):"—";holders[who]=(holders[who]||0)+1});
+  /* activity by person this month */
+  const lastSeen={};S.audit.forEach(a=>{if(a.actor_email&&a.actor_email!=="system"&&(!lastSeen[a.actor_email]||a.at>lastSeen[a.actor_email]))lastSeen[a.actor_email]=a.at});
+  const people=Object.values(S.members).filter(x=>x.active).map(x=>{const mine=rows.filter(p=>p.recorded_by===x.email||p.payer===x.email);const o=owed.find(p=>p.who===x.email);
+    return{x,count:mine.length,value:sumTzs(mine),personal:sumTzs(mine.filter(p=>p.funding==="Personal"&&p.payer===x.email)),owed:o?fmtByCur(Object.fromEntries(Object.entries(o.owed).filter(([,v])=>v>0))):"—",last:lastSeen[x.email]}}).sort((a,b)=>b.value-a.value);
+  const months=monthsBack(6).map(k=>[k,sumTzs(spendRows(k))]);const mmax=Math.max(1,...months.map(x=>x[1]));
+  const cats=groupSum(rows,p=>p.category).slice(0,5);const cmax=Math.max(1,...cats.map(x=>x[1]));
+  const change=prevTotal?Math.round((total-prevTotal)/prevTotal*100):null;
+  const loginBox=h("div",{class:"small muted"},isAdmin()?"Loading login activity…":"Visible to administrators.");if(isAdmin())loadLogins(loginBox);
+  return [h("h2",{style:"font-size:18px;margin-top:6px"},"Control panel"),
+    h("div",{class:"tiles"},tile(tzs(total),"Spent in "+monthName(m)+(change!=null?" · "+(change>=0?"+":"")+change+"% vs "+monthName(prev).split(" ")[0]:""),()=>{month=m;go("spending")}),
+      tile(tzs(sinceOct),"Spent since 1 Oct 2026",()=>go("spending")),tile(fmtByCur(owedTotal),"Owed to staff",()=>go("owed")),
+      tile(waitPays.length+waitReqs.length,"Waiting for approval"+(oldest!=null?" · oldest "+oldest+" days":""),()=>{ptab="waiting";go("payments")}),
+      tile(envs.length?tzs(envBudget-envUsed):"—","Left in active envelopes"+(envOver?" · "+envOver+" overspent":""),()=>go("envelopes")),
+      tile(exc.length,"Open exceptions",()=>go("exceptions"))),
+    h("div",{class:"grid2"},
+      panel("This month",["spending","Spending overview"],kv("Payments recorded",rows.length),kv("Average payment",rows.length?tzs(total/rows.length):"—"),kv("Paid with personal money",tzs(personal)+" · "+pct(personal,total)),
+        kv("Company money",tzs(total-personal)),kv("Have a receipt link",pct(withRec,rows.length)),kv("Company payments with fiscal receipt verified",pct(fisOk,comp.length)),kv("Rejected payments",rejectedM)),
+      panel("Approvals pipeline",["payments","Payments"],kv("Payments awaiting approval",waitPays.length+" · "+tzs(sumTzs(waitPays)),()=>{ptab="waiting";go("payments")}),kv("Purchase requests awaiting approval",waitReqs.length,()=>{tab="approval";go("requests")}),
+        kv("Approved requests awaiting payment",awaitingPay.length,()=>{tab="payment";go("requests")}),kv("Oldest item waiting",oldest!=null?oldest+" days":"—"),
+        h("div",{class:"small muted",style:"margin-top:10px"},"Waiting with:"),Object.keys(holders).length?Object.entries(holders).map(([k,v])=>kv(k,v)):h("div",{class:"small muted"},"Nobody. All clear."))),
+    h("div",{class:"grid2"},
+      panel("Last 6 months",["spending","Details"],h("div",{style:"display:grid;grid-template-columns:repeat(6,1fr);gap:8px;align-items:end;height:150px;margin-top:8px"},
+        months.map(([k,v])=>h("button",{style:"display:flex;flex-direction:column;justify-content:flex-end;gap:4px;height:100%;border:0;background:none;cursor:pointer;padding:0;min-width:0",onclick:()=>{month=k;go("spending")},"aria-label":monthName(k)+": "+tzs(v)},
+          h("span",{class:"small num",style:"text-align:center;font-size:11px;color:var(--muted)"},v?(v>=1e6?(v/1e6).toFixed(1)+"m":Math.round(v/1e3)+"k"):"0"),
+          h("span",{style:"display:block;border-radius:4px 4px 0 0;background:"+(k===m?"var(--brand)":"var(--line)")+";height:"+Math.max(2,v/mmax*100)+"px"}),
+          h("span",{class:"small",style:"text-align:center;font-weight:"+(k===m?"700":"500")},new Date(k+"-01T00:00:00").toLocaleDateString("en-GB",{month:"short"})))))),
+      panel("Top categories this month",["spending","Details"],cats.length?cats.map(([k,v])=>h("div",{style:"margin-top:8px"},h("div",{class:"kv"},h("span",{style:"color:var(--ink);font-weight:600"},k),h("span",{class:"num"},tzs(v))),h("div",{class:"envbar"},h("i",{style:"width:"+(v/cmax*100)+"%"})))):empty("No spending yet this month."))),
+    h("section",{class:"panel"},h("div",{class:"ph"},h("h2",null,"People this month"),isAdmin()?h("a",{href:"#people",class:"small"},"Manage people"):null),
+      T([{l:"Person",primary:true},{l:"Payments",num:true},{l:"Value",num:true},{l:"Own money spent",num:true},{l:"Owed now",num:true},{l:"Last activity"}],
+        people.map(p=>[h("div",null,h("div",{style:"font-weight:600"},p.x.full_name||p.x.email),h("div",{class:"small muted"},(p.x.roles||[]).filter(r=>r!=="staff").map(r=>ROLE_NAME[r]).join(", ")||"Staff")),p.count,tzs(p.value),tzs(p.personal),p.owed,p.last?fmtTime(p.last):"No activity yet"]))),
+    h("div",{class:"grid2"},
+      panel("Control health",["exceptions","Exceptions"],kv("FX rate",fx?Number(fx.rate).toLocaleString("en-GB",{maximumFractionDigits:2})+" · "+(fxAge===0?"today":fxAge+" days old"):"Not set",()=>go("setup")),
+        ...accs.map(a=>{const r=latestRecon(a.id),st=reconState(r);return kv(a.name,(r?fmtDate(r.as_of)+" · ":"")+st.t,()=>go("bank"))}),
+        Object.keys(excBy).length?Object.entries(excBy).sort((a,b)=>b[1]-a[1]).slice(0,6).map(([k,v])=>kv(k,v,()=>go("exceptions"))):kv("Exceptions","None")),
+      panel("Logins",isAdmin()?["people","People & logins"]:null,loginBox)),
+    h("section",{class:"panel"},h("div",{class:"ph"},h("h2",null,"Recent activity"),h("a",{href:"#audit",class:"small"},"Audit trail")),
+      S.audit.length?T([{l:"Detail",primary:true},{l:"When"},{l:"Who"},{l:"Action"}],S.audit.slice(0,10).map(a=>[auditSummary(a),fmtTime(a.at),nameOf(a.actor_email),auditAction(a)])):empty("No activity yet."))]}
+async function loadLogins(box){try{const{data:{session}}=await sb.auth.getSession();const res=await fetch("/api/admin-users",{headers:{Authorization:"Bearer "+session.access_token}});const out=await res.json();
+  if(!res.ok)throw new Error(out.error||"Could not load");const by={};(out.users||[]).forEach(u=>by[u.email]=u);
+  const list=Object.values(S.members).sort((a,b)=>a.email.localeCompare(b.email));
+  box.replaceChildren(...list.map(m=>{const u=by[m.email];return kv(m.full_name||m.email,!m.active?"Disabled":!u?"No login yet":u.last_sign_in_at?"Last sign-in "+fmtTime(u.last_sign_in_at):"Never signed in")}));box.className=""}
+  catch(e){box.textContent="Login activity unavailable: "+e.message}}
+
 function reqItems(arr){return arr.map(r=>{const s=status(r);return h("button",{class:"li",onclick:()=>openRequest(r.id)},h("div",{style:"min-width:0"},h("div",{class:"t"},r.title||"Untitled"),h("div",{class:"small muted"},r.id+" · "+((S.suppliers[r.supplierId]||{}).name||"No supplier")+" · "+nameOf(r.requester)),trail(r)),h("div",{style:"text-align:right"},h("div",{class:"num",style:"font-weight:700"},money(r.amount,r.currency)),pill(s.t,s.c)))})}
 function claimItems(arr){return arr.map(p=>h("button",{class:"li",onclick:()=>showPayment(p.id)},h("div",{style:"min-width:0"},h("div",{class:"t"},p.description),h("div",{class:"small muted"},p.id+" · payment · "+paidFrom(p))),h("div",{style:"text-align:right"},h("div",{class:"num",style:"font-weight:700"},money(p.amount,p.currency)),pill(PAY_LABEL[p.status],PAY_PILL[p.status]))))}
 function trail(r){const ok=r.invoice&&["Verified","Exception approved"].includes(r.invoice.fiscal);const parts=[{s:r.submitted?"done":"now"},...chainState(r).map(x=>({s:x.s==="done"?"done":x.s==="rej"?"gap":x.s==="now"?"now":""})),{s:r.delivery?"done":""},{s:r.invoice?(ok?"done":"gap"):""},{s:(r.payment||reqPayments(r).length)?(approvedAll(r)?"done":"gap"):""}];

@@ -12,7 +12,7 @@ async function sbFetch(path, opts = {}, key = SERVICE) {
 
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
-  if (req.method !== "POST") return res.status(405).json({ error: "Use POST" });
+  if (req.method !== "POST" && req.method !== "GET") return res.status(405).json({ error: "Use GET or POST" });
   if (!URL_ || !ANON || !SERVICE) return res.status(500).json({ error: "Server is not configured" });
 
   // 1. Who is calling? Verify their session token with Supabase.
@@ -26,6 +26,18 @@ export default async function handler(req, res) {
   const adm = await sbFetch("/rest/v1/members?select=roles,active&email=eq." + encodeURIComponent(caller));
   const row = Array.isArray(adm.body) ? adm.body[0] : null;
   if (!row || !row.active || !row.roles.includes("admin")) return res.status(403).json({ error: "Only administrators can manage logins" });
+
+  // GET: login activity for the control panel (email, created, last sign-in). Nothing else is returned.
+  if (req.method === "GET") {
+    const users = [];
+    for (let page = 1; page <= 20; page++) {
+      const list = await sbFetch(`/auth/v1/admin/users?page=${page}&per_page=200`);
+      const batch = list.body?.users || [];
+      batch.forEach(u => users.push({ email: (u.email || "").toLowerCase(), created_at: u.created_at, last_sign_in_at: u.last_sign_in_at || null }));
+      if (batch.length < 200) break;
+    }
+    return res.status(200).json({ users });
+  }
 
   // 3. Validate the request.
   const email = String(req.body?.email || "").trim().toLowerCase();
