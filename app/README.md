@@ -21,7 +21,19 @@ Staff sign in with their **email (username) and password**. What each person can
 Starting members (`supabase/002_seed.sql`): habari@ (admin), hamis@ (admin, director), asnes@ and joseph@ (approver),
 finance@ (custodian). Nobody can approve their own request.
 
-## One-time setup (about 30 minutes)
+## Easiest setup: Supabase through Vercel (about 20 minutes)
+1. Vercel → Add New → Project → import `tusometechnologies/finance`, Root Directory `app`, Framework `Other` → Deploy.
+2. In that project: **Storage** tab → Create Database → **Supabase** → choose a region → Connect to this project.
+   Vercel creates the Supabase project and adds the keys as environment variables automatically
+   (the app accepts both `SUPABASE_*` and `NEXT_PUBLIC_SUPABASE_*` names).
+3. Storage tab → your Supabase database → **Open in Supabase**. There: SQL Editor → run `supabase/001_schema.sql`,
+   then `supabase/002_seed.sql`. Then Authentication → turn **Allow new users to sign up** OFF; URL Configuration →
+   Site URL `https://finance.tusome.ac.tz`; Users → Add user → your email + password, tick Auto Confirm.
+4. Back in Vercel: Deployments → Redeploy (so the new variables load). Settings → Domains → add `finance.tusome.ac.tz`
+   and create the DNS record shown.
+5. Sign in, open People & logins, and set a password for each person.
+
+## Manual setup (alternative)
 
 ### 1. Supabase
 1. Create a project at supabase.com (choose the region closest to Tanzania, e.g. EU Frankfurt or South Africa).

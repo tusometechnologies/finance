@@ -1,8 +1,8 @@
 // Create a login or set a new password. Only active members with the admin role may call this.
 // Uses the Supabase service-role key, which exists only on the server (Vercel environment variable).
-const URL_ = process.env.SUPABASE_URL;
-const ANON = process.env.SUPABASE_ANON_KEY;
-const SERVICE = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const URL_ = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+const ANON = process.env.SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_PUBLISHABLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+const SERVICE = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY;
 
 async function sbFetch(path, opts = {}, key = SERVICE) {
   const r = await fetch(URL_ + path, { ...opts, headers: { apikey: key, Authorization: "Bearer " + key, "Content-Type": "application/json", ...(opts.headers || {}) } });
