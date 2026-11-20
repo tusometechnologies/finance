@@ -121,11 +121,16 @@ function authView(mode,msg){$("#appRoot").hidden=true;const root=$("#authRoot");
     card.onsubmit=async e=>{e.preventDefault();btn.disabled=true;await sb.auth.resetPasswordForEmail(em.value.trim().toLowerCase(),{redirectTo:location.origin});btn.disabled=false;err.style.color="var(--ok)";err.textContent="If that email has a login, a reset link is on its way."}}
   else if(mode==="newpass"){const p1=h("input",{type:"password",autocomplete:"new-password",minlength:"10",required:true}),p2=h("input",{type:"password",autocomplete:"new-password",required:true});const btn=h("button",{class:"btn primary",type:"submit"},"Save new password");
     card.append(h("h1",null,"Choose a new password"),h("label",{class:"f"},"New password",p1,h("span",{class:"hint"},"At least 10 characters.")),h("label",{class:"f"},"Repeat password",p2),err,btn);
-    card.onsubmit=async e=>{e.preventDefault();if(p1.value.length<10){err.textContent="Use at least 10 characters.";return}if(p1.value!==p2.value){err.textContent="The passwords do not match.";return}btn.disabled=true;const{error}=await sb.auth.updateUser({password:p1.value});btn.disabled=false;if(error){err.textContent=error.message;return}toast("Password saved");startApp()}}
+    card.onsubmit=async e=>{e.preventDefault();if(p1.value.length<10){err.textContent="Use at least 10 characters.";return}if(p1.value!==p2.value){err.textContent="The passwords do not match.";return}btn.disabled=true;const{error}=await sb.auth.updateUser({password:p1.value});btn.disabled=false;if(error){err.textContent=error.message;return}toast("Password saved");setTimeout(startApp,0)}}
   root.replaceChildren(h("div",{class:"auth"},card));const f=root.querySelector("input");if(f)f.focus()}
-async function startApp(){$("#authRoot").hidden=true;$("#appRoot").hidden=false;await loadAll();
-  if(!S.member||!S.member.active){$("#view").replaceChildren(h("div",{class:"banner"},h("b",null,"No access. "),S.loadError?"The database refused to load the member list: "+S.loadError+". The administrator should run supabase/003_fix_access.sql.":"This login is not an active TUSOME Finance member. Ask the administrator to add "+S.email+"."),h("div",{class:"row"},h("button",{class:"btn",onclick:()=>sb.auth.signOut()},"Sign out")));$("#nav").replaceChildren();$("#mobnav").replaceChildren();$("#who").replaceChildren(S.email||"");return}
+async function startApp(){$("#authRoot").hidden=true;$("#appRoot").hidden=false;S._routed=false;await loadAll();
+  if(!S.member||!S.member.active){$("#view").replaceChildren(h("div",{class:"banner"},h("b",null,"No access. "),S.loadError?"The database refused to load the member list: "+S.loadError+". The administrator should run supabase/003_fix_access.sql.":"This login is not an active TUSOME Finance member. Ask the administrator to add "+S.email+"."),h("div",{class:"row"},h("button",{class:"btn",onclick:signOut},"Sign out")));$("#nav").replaceChildren();$("#mobnav").replaceChildren();$("#who").replaceChildren(S.email||"");return}
   if(!S._subscribed){subscribe();S._subscribed=true}readHash()}
+async function signOut(){S.session=null;S.email=null;S.member=null;S.loaded=false;S._subscribed=false;sheetFor=null;
+  try{sb.removeAllChannels()}catch(e){}
+  try{await Promise.race([sb.auth.signOut({scope:"local"}),new Promise(r=>setTimeout(r,2500))])}catch(e){console.warn(e)}
+  try{Object.keys(localStorage).filter(k=>k.startsWith("sb-")).forEach(k=>localStorage.removeItem(k))}catch(e){}
+  if(dlg.open)dlg.close();$("#sheetRoot").replaceChildren();history.replaceState(null,"",location.pathname);authView("login")}
 function changePassword(){openDlg("Change password",h("div",{class:"fg"},field("cp-1","New password","password","",{hint:"At least 10 characters."}),field("cp-2","Repeat password","password","")),[saveBtn("Save password",async()=>{
   const a=val("cp-1"),b=val("cp-2");if(a.length<10){toast("Use at least 10 characters.");return false}if(a!==b){toast("The passwords do not match.");return false}
   const{error}=await sb.auth.updateUser({password:a});if(error){toast(error.message);return false}toast("Password changed")})])}
@@ -139,9 +144,10 @@ function closeSheet(){sheetFor=null;if(location.hash.startsWith("#r-"))history.r
 function renderNav(){const pend=myPending().length,exc=allExceptions().length;
   const badge=k=>k==="today"&&pend?h("span",{class:"count"},pend):k==="exceptions"&&exc?h("span",{class:"count bad"},exc):null;
   const mk=()=>VIEWS.filter(([k])=>k!=="people"||isAdmin()).map(([k,l])=>h("a",{href:"#"+k,"aria-current":view===k&&!sheetFor?"page":null},h("span",null,l),badge(k)));
-  $("#nav").replaceChildren(...mk());$("#mobnav").replaceChildren(...mk());
+  $("#nav").replaceChildren(...mk());
+  $("#mobnav").replaceChildren(...mk(),h("a",{href:"#",onclick:e=>{e.preventDefault();changePassword()}},"Password"),h("a",{href:"#",onclick:e=>{e.preventDefault();signOut()}},"Sign out"));
   $("#who").replaceChildren(h("b",null,(S.member&&S.member.full_name)||S.email),S.email,h("div",null,myRoles().filter(r=>r!=="staff").map(r=>ROLE_NAME[r]).join(" · ")||"Staff"),
-    h("div",{class:"row",style:"margin-top:8px"},h("button",{class:"btn sm",onclick:changePassword},"Password"),h("button",{class:"btn sm",onclick:()=>sb.auth.signOut()},"Sign out")))}
+    h("div",{class:"row",style:"margin-top:8px"},h("button",{class:"btn sm",onclick:changePassword},"Password"),h("button",{class:"btn sm",onclick:signOut},"Sign out")))}
 
 /* ============ views ============ */
 function render(){if(!S.member)return;renderNav();const parts=[];
@@ -402,7 +408,7 @@ function genPassword(){const a="ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxy
   sb=supabase.createClient(conf.url,conf.anonKey,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});
   sb.auth.onAuthStateChange((event,session)=>{
     if(event==="PASSWORD_RECOVERY"){S.session=session;S.email=session&&session.user.email.toLowerCase();authView("newpass");return}
-    if(event==="SIGNED_OUT"){S.session=null;S.email=null;S.member=null;S.loaded=false;authView("login");return}
-    if(session&&(event==="SIGNED_IN"||event==="INITIAL_SESSION")&&!S.session){S.session=session;S.email=session.user.email.toLowerCase();startApp()}
+    if(event==="SIGNED_OUT"){if(S.session){S.session=null;S.email=null;S.member=null;S.loaded=false;authView("login")}return}
+    if(session&&(event==="SIGNED_IN"||event==="INITIAL_SESSION")&&!S.session){S.session=session;S.email=session.user.email.toLowerCase();setTimeout(startApp,0)}
     if(!session&&event==="INITIAL_SESSION")authView("login")});
 })();
