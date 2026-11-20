@@ -7,6 +7,13 @@ Staff sign in with their **email (username) and password**. What each person can
 - Database and logins: Supabase (Postgres + Supabase Auth)
 - Every rule is enforced in the database (`supabase/001_schema.sql`), not in the browser.
 
+## Database updates (run in order in Supabase > SQL Editor)
+1. `supabase/001_schema.sql` — tables, approval rules, audit trail
+2. `supabase/002_seed.sql` — members, settings, suppliers, accounts
+3. `supabase/003_fix_access.sql` — access grants (safe to re-run)
+4. `supabase/004_expenses_envelopes_bank.sql` — envelopes, expense claims, who we owe, bank reconciliation,
+   and opening balances owed to staff (from the tracker's Outstanding Reimbursements; verify before paying)
+
 ## Roles
 
 | Role | Can do |
@@ -17,6 +24,11 @@ Staff sign in with their **email (username) and password**. What each person can
 | custodian | Finance custodian (records payments; label for reporting) |
 | admin | Change rules, FX and tax rates, bank & wallets, people and passwords |
 | auditor | Read everything, including the audit trail; change nothing |
+
+Expense claims: anyone logs their own; a Band 1–2 approver or the Director approves (Director above USD 1,000);
+nobody approves their own. Staff see only their own claims. The Finance custodian or an admin records reimbursements
+(never their own) against the tracker Record ID. Envelopes: admin only. Bank reconciliations: prepared by the
+custodian or an admin, signed off by a different admin; a difference must be explained first.
 
 Starting members (`supabase/002_seed.sql`): habari@ (admin), hamis@ (admin, director), asnes@ and joseph@ (approver),
 finance@ (custodian). Nobody can approve their own request.
