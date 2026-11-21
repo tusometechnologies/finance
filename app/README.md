@@ -24,6 +24,8 @@ Staff sign in with their **email (username) and password**. What each person can
 10. `supabase/010_judith_separate_payments.sql` — records Q426-099 and Q426-107 as two separate, approved payments.
 11. `supabase/011_accounting_core.sql` — double-entry books: chart of accounts, journals, automatic posting of approved
     payments / repayments / opening balances, manual journals, reversals, lock date; posts all existing records.
+12. `supabase/012_sales_receivables.sql` — customers, sales invoices (issued by admin / custodian / Director), money received
+    with withholding tax deducted by clients and FX gains/losses, receivables; company details for invoices.
 
 ## Roles
 
