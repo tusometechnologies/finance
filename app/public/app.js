@@ -24,7 +24,7 @@ const TABS = [["today","Today","M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0
 /* ============ state ============ */
 let sb = null;
 const S = {session:null,email:null,member:null,settings:null,members:{},requests:{},suppliers:{},contracts:{},accounts:{},approvals:{},audit:[],
-  customers:{},invoices:{},receipts:{},gl:{},glmap:{},journals:{},jlines:[],envelopes:{},claims:{},payments:{},reimbursements:{},reconciliations:{},loaded:false};
+  bank_lines:{},customers:{},invoices:{},receipts:{},gl:{},glmap:{},journals:{},jlines:[],envelopes:{},claims:{},payments:{},reimbursements:{},reconciliations:{},loaded:false};
 let view="today", tab="all", ptab="all", q="", pq="", af="", sheetFor=null, month=new Date().toISOString().slice(0,7);
 
 /* ============ helpers ============ */
@@ -147,6 +147,7 @@ async function loadTable(name){
   if(name==="requests"){const{data,error}=await sb.from("requests").select("*");if(!error){S.requests={};data.forEach(x=>S.requests[x.id]=rowToRequest(x))}return}
   if(name==="approvals"){const{data,error}=await sb.from("approvals").select("*");if(!error){S.approvals={};data.forEach(a=>S.approvals[apprKey(a.request_id,a.rev,a.step)]=a)}return}
   if(name==="audit_log"){const{data,error}=await sb.from("audit_log").select("*").order("id",{ascending:false}).limit(500);if(!error)S.audit=data;return}
+  if(name==="bank_lines"){if(!seesBooks())return;const all=[];for(let f=0;;f+=1000){const{data,error}=await sb.from("bank_lines").select("*").range(f,f+999);if(error){S.bankMissing=true;return}all.push(...data);if(data.length<1000)break}S.bankMissing=false;S.bank_lines={};all.forEach(x=>S.bank_lines[x.id]=x);return}
   if(name==="customers"||name==="invoices"||name==="receipts"){const{data,error}=await sb.from(name).select("*");if(error){S.salesMissing=true;return}S.salesMissing=false;S[name]={};data.forEach(x=>S[name][x.id]=x);return}
   if(name==="gl_accounts"){const{data,error}=await sb.from("gl_accounts").select("*");if(error){S.glMissing=true;return}S.glMissing=false;S.gl={};data.forEach(a=>S.gl[a.code]=a);return}
   if(name==="gl_category_map"){const{data,error}=await sb.from("gl_category_map").select("*");if(!error){S.glmap={};data.forEach(m=>S.glmap[m.category]=m.account_code)}return}
@@ -154,10 +155,10 @@ async function loadTable(name){
   if(name==="journal_lines"){if(!seesBooks())return;const all=[];for(let f=0;;f+=1000){const{data,error}=await sb.from("journal_lines").select("*").range(f,f+999);if(error||!data)break;all.push(...data);if(data.length<1000)break}S.jlines=all;return}
   if(ROW_TABLES.includes(name)){const{data,error}=await sb.from(name).select("*");if(error){console.warn(name,error.message);S.missing004=true;return}S[name]={};data.forEach(x=>S[name][x.id]=x);return}
   const{data,error}=await sb.from(name).select("*");if(!error){S[name]={};data.forEach(x=>S[name][x.id]=Object.assign({},x.data,{id:x.id}))}}
-const TABLES=["customers","invoices","receipts","gl_accounts","gl_category_map","journals","journal_lines","settings","members","suppliers","contracts","accounts","requests","approvals","audit_log",...ROW_TABLES];
+const TABLES=["bank_lines","customers","invoices","receipts","gl_accounts","gl_category_map","journals","journal_lines","settings","members","suppliers","contracts","accounts","requests","approvals","audit_log",...ROW_TABLES];
 async function loadAll(){S.missing004=false;await loadTable("members");await Promise.all(TABLES.filter(t=>t!=="members").map(loadTable));S.loaded=true;render()}
 let refreshTimer=null;const pending=new Set();
-function scheduleRefresh(t){pending.add(t);if(t==="journals"||t==="payments"||t==="reimbursements"||t==="invoices"||t==="receipts"){pending.add("journals");pending.add("journal_lines")}pending.add("audit_log");clearTimeout(refreshTimer);refreshTimer=setTimeout(async()=>{const list=[...pending];pending.clear();await Promise.all(list.map(loadTable));render()},250)}
+function scheduleRefresh(t){pending.add(t);if(t==="journals"||t==="payments"||t==="reimbursements"||t==="invoices"||t==="receipts"||t==="bank_lines"){pending.add("journals");pending.add("journal_lines")}pending.add("audit_log");clearTimeout(refreshTimer);refreshTimer=setTimeout(async()=>{const list=[...pending];pending.clear();await Promise.all(list.map(loadTable));render()},250)}
 function subscribe(){sb.channel("live").on("postgres_changes",{event:"*",schema:"public"},p=>scheduleRefresh(p.table)).subscribe()}
 async function run(fn,okMsg,tables){try{const res=await fn();if(res&&res.error)throw res.error;if(okMsg)toast(okMsg);(tables||[]).forEach(scheduleRefresh);return res||true}catch(e){console.error(e);toast(friendly(e));return false}}
 function friendly(e){const m=(e&&(e.message||e.error_description))||"";if(/row-level security|permission denied/i.test(m))return "You do not have permission to do that.";if(/relation .* does not exist|Could not find the table/i.test(m))return "The database needs the latest update (run supabase/005_payments_ledger.sql).";return m||"Could not save. Try again."}
@@ -494,9 +495,10 @@ function editEnvelope(id){if(!isAdmin())return;const e=id?S.envelopes[id]:{curre
 
 /* ---- bank & reconciliation ---- */
 function vBank(){const list=Object.values(S.accounts).sort((a,b)=>a.id>b.id?1:-1);const recs=Object.values(S.reconciliations).sort((a,b)=>(b.as_of+b.prepared_at).localeCompare(a.as_of+a.prepared_at));
-  return [header("Bank & reconciliation","Record each account's statement balance and compare it with the expenditure tracker. Prepared by the Finance custodian, signed off by a different administrator.",
+  return [header("Bank & reconciliation","Import statements and match each line to the books, then record each account's statement balance. Prepared by the Finance custodian, signed off by a different administrator.",
       newBtn("Update balance",()=>editRecon(),canReconcile()),isAdmin()?h("button",{class:"btn",onclick:()=>editAccount()},"Add account"):null),
     h("div",{class:"tiles"},tile(fmtByCur(cashPosition()),"Cash per latest statements (company accounts)"),tile(recs.filter(r=>!r.reviewed_by).length,"Awaiting sign-off"),tile(list.filter(a=>a.holder==="Company"&&!latestRecon(a.id)).length,"Company accounts never reconciled")),
+    vStatements(),
     h("section",{class:"panel"},h("div",{class:"ph"},h("h2",null,"Accounts")),!list.length?empty("No accounts recorded."):
       T([{l:"Account",primary:true},{l:"Holder"},{l:"Last 4",mono:true},{l:"Statement balance",num:true},{l:"Difference",num:true},{l:"As of"},{l:"Status"},{l:""}],list.map(a=>{const r=latestRecon(a.id),st=reconState(r);
         return [h("div",null,h("div",{style:"font-weight:600"},a.name),h("div",{class:"small muted"},[a.type,a.provider].filter(Boolean).join(" · "))),a.holder||"—",a.last4||"—",r?money(r.statement_balance,r.currency):"—",r?h("span",{style:Math.abs(n0(r.difference))>0.005?"color:var(--bad);font-weight:700":null},money(r.difference,r.currency)):"—",r?fmtDate(r.as_of):"—",pill(st.t,st.c),
@@ -511,7 +513,7 @@ function showRecon(id){const r=S.reconciliations[id];const st=reconState(r);cons
     h("dt",null,"Tracker (book) balance"),h("dd",null,money(r.book_balance,r.currency)),h("dt",null,"Difference"),h("dd",null,money(r.difference,r.currency)),h("dt",null,"Explanation"),h("dd",null,r.explanation||"—"),
     h("dt",null,"Statement"),h("dd",null,r.statement_link?h("a",{href:r.statement_link,target:"_blank",rel:"noopener"},"Open statement"):"—"),h("dt",null,"Prepared"),h("dd",null,nameOf(r.prepared_by)+" · "+fmtTime(r.prepared_at)),
     h("dt",null,"Signed off"),h("dd",null,r.reviewed_by?nameOf(r.reviewed_by)+" · "+fmtTime(r.reviewed_at)+(r.review_comment?" · “"+r.review_comment+"”":""):"Not yet"))),acts)}
-function editRecon(id,accId){if(!canReconcile())return;const r=id?S.reconciliations[id]:{account_id:accId||"",as_of:today(),currency:(S.accounts[accId]||{}).currency||"TZS"};
+function editRecon(id,accId,pre){if(!canReconcile())return;const r=id?S.reconciliations[id]:Object.assign({account_id:accId||"",as_of:today(),currency:(S.accounts[accId]||{}).currency||"TZS"},pre||{});
   const diff=h("div",{class:"rule",style:"grid-column:1/-1"});
   const body=h("div",{class:"fg"},field("rc-a","Account","select",r.account_id,{options:Object.values(S.accounts).map(a=>[a.id,a.name])}),field("rc-d","Statement date (as of)","date",r.as_of),
     field("rc-s","Balance per statement","number",r.statement_balance,{neg:true}),field("rc-b","Balance per expenditure tracker","number",r.book_balance,{neg:true}),field("rc-c","Currency","select",r.currency,{options:["TZS","USD"],blank:false}),
@@ -686,6 +688,60 @@ function editCompany(){const c=co();openDlg("Company details on invoices",h("div
   field("co-e","Email","email",c.email),field("co-p","Phone","text",c.phone),field("co-b","Bank details for payment","textarea",c.bank_details,{full:true,rows:3}),field("co-t","Payment terms (days)","number",c.payment_terms_days),
   field("co-vr","VAT registered","select",c.vat_registered?"yes":"no",{options:[["no","No"],["yes","Yes"]],blank:false}),field("co-v","VAT rate","number",c.vat_rate,{hint:"0.18 = 18%"})),
   [saveBtn("Save",()=>saveSettings({company:{legal_name:val("co-n"),tin:val("co-tin"),vrn:val("co-vrn"),address:val("co-a"),email:val("co-e"),phone:val("co-p"),bank_details:val("co-b"),payment_terms_days:n0(val("co-t"))||30,vat_registered:val("co-vr")==="yes",vat_rate:n0(val("co-v"))||0.18}},"Company details saved"))])}
+
+/* ============ bank statements: import and match ============ */
+let bankAcc=null, btab="Unmatched";
+const linkedBanks=()=>Object.values(S.accounts).filter(a=>Object.values(S.gl).some(g=>g.bank_account_id===a.id&&g.active));
+const glOfBank=id=>(Object.values(S.gl).find(g=>g.bank_account_id===id&&g.active)||{}).code;
+function bookBalance(code,asAt,cur){return S.jlines.filter(l=>l.account_code===code&&S.journals[l.journal_id]&&(!asAt||S.journals[l.journal_id].date<=asAt)).reduce((t,l)=>{const d=n0(l.debit)-n0(l.credit);return t+(cur==="USD"?Math.sign(d)*n0(l.amount_fc):d)},0)}
+function vStatements(){if(!seesBooks())return null;const banks=linkedBanks();if(!banks.length)return null;if(!bankAcc||!banks.some(b=>b.id===bankAcc))bankAcc=(banks.find(b=>b.id==="ACC-02")||banks[0]).id;
+  const lines=Object.values(S.bank_lines).filter(l=>l.account_id===bankAcc).sort((a,b)=>(b.date+String(b.id).padStart(9,"0")).localeCompare(a.date+String(a.id).padStart(9,"0")));
+  const cnt=k=>k==="All"?lines.length:lines.filter(l=>l.status===k).length;const rows=btab==="All"?lines:lines.filter(l=>l.status===btab);
+  const withBal=lines.filter(l=>l.balance!=null).sort((a,b)=>(b.date+String(b.id).padStart(9,"0")).localeCompare(a.date+String(a.id).padStart(9,"0")))[0];
+  const gl=glOfBank(bankAcc);const lastDate=lines.length?lines.reduce((m,l)=>l.date>m?l.date:m,""):null;const cur=(S.accounts[bankAcc]||{}).currency||"TZS";const book=gl?bookBalance(gl,lastDate,cur):0;
+  return h("section",{class:"panel"},h("div",{class:"ph"},h("h2",null,"Statement matching"),h("div",{class:"row"},h("select",{"aria-label":"Account",onchange:e=>{bankAcc=e.target.value;render()}},banks.map(b=>h("option",{value:b.id,selected:b.id===bankAcc?true:null},b.name))),
+      keepsBooks()?h("button",{class:"btn sm primary",onclick:importStatement},"Import statement"):null)),
+    S.bankMissing?h("div",{class:"banner",style:"margin:12px 16px"},h("b",null,"Database update needed. "),"Run supabase/013_bank_statements.sql in Supabase."):null,
+    h("div",{class:"tiles",style:"margin:12px 16px;border-radius:8px"},tile(cnt("Unmatched"),"Lines to match"),tile(withBal?money(withBal.balance,cur):"—","Statement balance"+(withBal?" · "+fmtDate(withBal.date):"")),
+      tile(gl?money(book,cur):"—","Books balance"+(lastDate?" at "+fmtDate(lastDate):"")),
+      tile(withBal&&gl?money(n0(withBal.balance)-book,cur):"—","Difference"+(withBal&&gl&&Math.abs(n0(withBal.balance)-book)<0.5?" · agrees":""))),
+    withBal&&canReconcile()?h("div",{style:"padding:0 16px 10px"},h("button",{class:"btn sm",onclick:()=>editRecon(null,bankAcc,{as_of:withBal.date,statement_balance:n0(withBal.balance),currency:cur,book_balance:Math.round(bookBalance(gl,withBal.date,cur)*100)/100,explanation:cnt("Unmatched")?cnt("Unmatched")+" statement lines not yet matched":""})},"Use these balances to reconcile")):null,
+    h("div",{class:"tabs",role:"tablist"},["Unmatched","Matched","Created","Ignored","All"].map(k=>h("button",{role:"tab","aria-selected":btab===k?"true":"false",onclick:()=>{btab=k;render()}},k==="Unmatched"?"To match":k,h("span",{class:"n"},cnt(k))))),
+    !rows.length?empty(lines.length?"Nothing here.":"No statement imported for this account yet. Select “Import statement”."):
+    T([{l:"Description",primary:true},{l:"Date"},{l:"Reference"},{l:"Money in",num:true},{l:"Money out",num:true},{l:"Status"},{l:""}],rows.slice(0,300).map(l=>{const jl=S.jlines.find(x=>x.id===l.journal_line_id);const j=jl&&S.journals[jl.journal_id];
+      return [h("div",null,h("div",null,l.description||"—"),j?h("div",{class:"small muted"},"→ "+j.id+" · "+(jl.description||j.memo)):l.note?h("div",{class:"small muted"},l.note):null),fmtDate(l.date),l.reference||"—",l.amount>0?money(l.amount,l.currency):"",l.amount<0?money(-l.amount,l.currency):"",
+        pill(l.status==="Unmatched"?"To match":l.status,l.status==="Unmatched"?"p-warn":l.status==="Ignored"?"p-mute":"p-ok"),
+        keepsBooks()?(l.status==="Unmatched"?h("span",{class:"row",style:"justify-content:flex-end"},h("button",{class:"btn sm primary",onclick:()=>matchLine(l)},"Match"),h("button",{class:"btn sm",onclick:()=>createFromLine(l)},"Create entry"),h("button",{class:"btn sm",onclick:()=>ignoreLine(l)},"Ignore"))
+          :h("button",{class:"btn sm",onclick:()=>run(()=>sb.rpc("unmatch_bank_line",{p_line:l.id}),"Undone",["bank_lines","journals"])},"Undo")):""]})))}
+async function matchLine(l){const{data,error}=await sb.rpc("bank_candidates",{p_line:l.id});if(error){toast(friendly(error));return}
+  const list=data||[];openDlg("Match "+money(Math.abs(l.amount),l.currency)+(l.amount>0?" in":" out")+" · "+fmtDate(l.date),h("div",{style:"display:grid;gap:10px"},h("div",{class:"rule"},h("b",null,l.description||"—"),l.reference||""),
+    !list.length?h("div",null,h("p",{class:"small muted",style:"margin:0"},"No entry in the books has this amount within 14 days. If the payment or receipt is not recorded yet, record it first (Payments, Who we owe or Sales), or use Create entry for bank charges and similar."))
+    :h("div",{class:"list"},list.map(c=>h("button",{class:"li",onclick:async()=>{if(await run(()=>sb.rpc("match_bank_line",{p_line:l.id,p_journal_line:c.journal_line_id}),"Matched",["bank_lines"]))dlg.close()}},h("div",null,h("div",{class:"t"},c.memo),h("div",{class:"small muted"},c.journal_id+" · "+fmtDate(c.date)+(c.days?" · "+c.days+" days apart":" · same day"))),h("div",{class:"num",style:"font-weight:700"},tzs(Math.abs(c.amount))))))),[])}
+function createFromLine(l){const opts=Object.values(S.gl).filter(a=>a.active&&a.code!==glOfBank(l.account_id)).sort((a,b)=>a.code.localeCompare(b.code)).map(a=>[a.code,a.code+" "+a.name+" ("+a.type+")"]);
+  const sugg=l.amount<0?"6800":"4900";
+  openDlg("Create entry from statement line",h("div",{class:"fg"},h("div",{class:"rule",style:"grid-column:1/-1"},h("b",null,(l.amount>0?"Money in ":"Money out ")+money(Math.abs(l.amount),l.currency)+" · "+fmtDate(l.date)),l.description||""),
+    field("cl-a","Post the other side to","select",sugg,{options:opts,blank:false,full:true,hint:l.amount<0?"Bank charges: 6800. Supplier payments and staff costs should be recorded as payments instead.":"Interest or sundry income: 4900. Client money should be recorded under Sales so the invoice is settled."}),
+    field("cl-d","Description","text",l.description,{full:true}),field("cl-p","Project (optional)","text","")),
+    [saveBtn("Create and match",()=>run(()=>sb.rpc("create_from_bank_line",{p_line:l.id,p_account:val("cl-a"),p_description:val("cl-d"),p_project:val("cl-p")||null}),"Entry created and matched",["bank_lines","journals","journal_lines"]))])}
+function ignoreLine(l){openDlg("Ignore statement line",h("div",{class:"fg"},h("div",{class:"rule",style:"grid-column:1/-1"},money(l.amount,l.currency)+" · "+(l.description||"")),field("ig-r","Reason (required)","text","",{full:true,ph:"e.g. duplicate line in the statement, transfer between own accounts"})),
+  [saveBtn("Ignore",()=>{if(!val("ig-r")){toast("Give a reason.");return false}return run(()=>sb.rpc("ignore_bank_line",{p_line:l.id,p_reason:val("ig-r")}),"Ignored",["bank_lines"])})])}
+function importStatement(){if(!keepsBooks())return;let data=[];const map={};const mapBox=h("div",{class:"fg"});const prev=h("div",{class:"small"});
+  const F=[["date","Date",/date|posted|value/i],["description","Description",/desc|narr|detail|particular|memo/i],["reference","Reference",/ref|transaction id|txn|receipt/i],["amount","Amount (signed: + in, − out)",/^amount$|^amt$/i],["in","Money in (credit)",/credit|money in|deposit|paid in|received/i],["out","Money out (debit)",/debit|money out|withdraw|paid out|sent/i],["balance","Balance",/balance/i]];
+  function build(){const hdr=data[0]||[];mapBox.replaceChildren(...F.map(([k,l,re])=>{if(map[k]===undefined)map[k]=hdr.findIndex(x=>re.test(String(x)));return h("label",{class:"f"},l,h("select",{onchange:e=>{map[k]=Number(e.target.value);show()}},h("option",{value:"-1"},"(not in file)"),hdr.map((x,i)=>h("option",{value:i,selected:map[k]===i?true:null},x||"Column "+(i+1)))))}));show()}
+  const num=v=>{v=String(v||"").replace(/[,\s]/g,"");if(/^\(.*\)$/.test(v))v="-"+v.slice(1,-1);const x=parseFloat(v.replace(/[^0-9.\-]/g,""));return isNaN(x)?0:x};
+  function rows(){const g=(r,k)=>map[k]>=0?r[map[k]]:"";return data.slice(1).map((r,i)=>{let amt=map.amount>=0?num(g(r,"amount")):num(g(r,"in"))-Math.abs(num(g(r,"out")));
+    return{date:toISO(g(r,"date")),description:String(g(r,"description")||"").trim(),reference:String(g(r,"reference")||"").trim(),amount:Math.round(amt*100)/100,balance:map.balance>=0&&String(g(r,"balance")).trim()!==""?num(g(r,"balance")):null,seq:i}}).filter(x=>x.date&&x.amount)}
+  function show(){const out=rows();const tin=out.filter(x=>x.amount>0).reduce((t,x)=>t+x.amount,0),tout=out.filter(x=>x.amount<0).reduce((t,x)=>t-x.amount,0);
+    prev.replaceChildren(h("b",null,out.length+" lines"),out.length?" · from "+fmtDate(out.reduce((m,x)=>x.date<m?x.date:m,out[0].date))+" to "+fmtDate(out.reduce((m,x)=>x.date>m?x.date:m,out[0].date))+" · in "+fmtA(tin)+" · out "+fmtA(tout):"",
+      ...out.slice(0,3).map(x=>h("div",{class:"muted"},x.date+" · "+x.description+" · "+fmtA(x.amount))))}
+  const acc=field("is-a","Account","select",bankAcc,{options:linkedBanks().map(a=>[a.id,a.name]),blank:false});
+  const file=h("input",{type:"file",accept:".csv,.tsv,.txt",onchange:async e=>{const f=e.target.files[0];if(!f)return;data=parseCSV(await f.text());build()}});
+  const paste=h("textarea",{rows:3,placeholder:"…or paste the statement rows, including the header row",oninput:e=>{data=parseCSV(e.target.value);build()}});
+  openDlg("Import bank statement",h("div",{style:"display:grid;gap:12px"},h("p",{class:"small muted",style:"margin:0"},"Download the statement as CSV from online banking, PesaPal or Selcom, then upload it. Lines already imported are skipped. Lines with exactly one matching entry in the books are matched automatically."),
+    acc,h("label",{class:"f"},"CSV file",file),paste,mapBox,prev),[saveBtn("Import",async()=>{const out=rows();if(!out.length){toast("No lines with a date and amount.");return false}const a=val("is-a");
+      const before=Object.values(S.bank_lines).filter(l=>l.account_id===a&&l.status==="Matched").length;
+      const res=await run(()=>sb.rpc("import_statement",{p_account:a,p_rows:out}),null,["bank_lines"]);if(!res)return false;await loadTable("bank_lines");
+      const after=Object.values(S.bank_lines).filter(l=>l.account_id===a&&l.status==="Matched").length;bankAcc=a;btab="Unmatched";toast(res.data+" new lines imported, "+(after-before)+" matched automatically");render()})])}
 
 /* ============ accounting ============ */
 const seesBooks=()=>hasAny(["admin","director","alt_director","custodian","auditor"]);

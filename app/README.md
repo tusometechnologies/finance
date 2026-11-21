@@ -26,6 +26,7 @@ Staff sign in with their **email (username) and password**. What each person can
     payments / repayments / opening balances, manual journals, reversals, lock date; posts all existing records.
 12. `supabase/012_sales_receivables.sql` — customers, sales invoices (issued by admin / custodian / Director), money received
     with withholding tax deducted by clients and FX gains/losses, receivables; company details for invoices.
+13. `supabase/013_bank_statements.sql` — bank statement import (CSV) and line-by-line matching to the books: automatic match where exactly one entry has the same amount within 7 days, manual match, create entry (bank charges, interest), ignore with reason, undo. Ends with "phase 3 ready".
 
 ## Roles
 
